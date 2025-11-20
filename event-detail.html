@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aktionstag – Taskcenter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <section class="page" style="position: static; min-height: 100vh;">
+      <header class="page__header" style="padding:24px;">
+        <a href="./events.html" class="ghost-btn">Zurück</a>
+      </header>
+      <div id="page-title" class="page__title" style="padding:0 24px;">Aktionstag</div>
+      <div id="page-content" class="page__content" style="margin:0 24px 24px"></div>
+    </section>
+    <script src="./assets/data.js"></script>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const id = Number(params.get('id'));
+      const el = document.getElementById('page-content');
+      const item = (window.APP_DATA?.events || []).find(e => e.id === id);
+      if (!item) {
+        el.innerHTML = '<p>Nicht gefunden.</p>';
+      } else {
+        el.innerHTML = `
+          <article class="event-item" style="border:none; background:transparent; padding:0">
+            <div class="event-info">
+              <h2 style="margin:0 0 8px">${item.title}</h2>
+              <p style="font-size:1rem; line-height:1.6">${item.description}</p>
+            </div>
+            <div class="event-chip">${item.date}</div>
+          </article>
+        `;
+        document.getElementById('page-title').textContent = item.title;
+      }
+    </script>
+  </body>
+</html>

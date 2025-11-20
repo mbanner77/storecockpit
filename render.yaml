@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: filial-taskcenter
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEMO_TOKEN
+        value: demo-token
+    autoDeploy: true

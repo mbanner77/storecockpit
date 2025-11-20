@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aktionstage & Kampagnen – Taskcenter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <nav class="topnav">
+      <div class="topnav__inner">
+        <div class="topnav__links">
+          <a href="./index.html" class="ghost-btn ghost-btn--sm">Übersicht</a>
+          <a href="./updates.html" class="ghost-btn ghost-btn--sm">Updates</a>
+          <a href="./guides.html" class="ghost-btn ghost-btn--sm">Anleitungen</a>
+          <a href="./events.html" class="ghost-btn ghost-btn--sm active">Aktionstage</a>
+          <a href="./tasks-board.html" class="ghost-btn ghost-btn--sm">Board</a>
+        </div>
+      </div>
+    </nav>
+    <section class="page" style="position: static; min-height: 100vh;">
+      <header class="page__header" style="padding:24px;">
+        <a href="./index.html" class="ghost-btn">Zurück</a>
+        <div class="page__header-right" style="display:flex;gap:8px;align-items:center;">
+          <select id="page-sort" aria-label="Sortierung">
+            <option value="date_asc">Bald zuerst</option>
+            <option value="date_desc">Später zuerst</option>
+            <option value="title_asc">Titel A→Z</option>
+            <option value="title_desc">Titel Z→A</option>
+          </select>
+          <input id="page-search" type="search" placeholder="Suchen..." aria-label="Seitensuche" />
+        </div>
+      </header>
+      <div id="page-title" class="page__title" style="padding:0 24px;">Aktionstage & Kampagnen</div>
+      <div id="page-content" class="page__content" style="margin:0 24px 24px"></div>
+    </section>
+    <script src="./assets/data.js"></script>
+    <script>
+      const elContent = document.getElementById('page-content');
+      const elSearch = document.getElementById('page-search');
+      const elSort = document.getElementById('page-sort');
+      const PAGE_SIZE = 8;
+      let page = 1;
+
+      const applySort = (arr, mode) => {
+        const items = [...arr];
+        if (mode === 'title_asc') return items.sort((a,b)=>a.title.localeCompare(b.title,'de'));
+        if (mode === 'title_desc') return items.sort((a,b)=>b.title.localeCompare(a.title,'de'));
+        if (mode === 'date_asc') return items; // human date strings; assume default order soonest
+        if (mode === 'date_desc') return items.reverse();
+        return items;
+      };
+
+      const filtered = (q) => (window.APP_DATA?.events || [])
+        .filter(e => (e.title + ' ' + e.description + ' ' + e.date).toLowerCase().includes(q.toLowerCase()));
+
+      const paginate = (arr, p, size) => arr.slice((p-1)*size, p*size);
+
+      const renderPager = (total, size, p) => {
+        const pages = Math.max(1, Math.ceil(total/size));
+        let html = '<div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px">';
+        html += `<span style=\"color:#5b6b7b;font-size:.9rem\">Seite ${p} / ${pages}</span>`;
+        html += `<button id=\"pg-prev\" class=\"ghost-btn ghost-btn--sm\" ${p<=1?'disabled':''}>Zurück</button>`;
+        html += `<button id=\"pg-next\" class=\"ghost-btn ghost-btn--sm\" ${p>=pages?'disabled':''}>Weiter</button>`;
+        html += '</div>';
+        return html;
+      };
+
+      const render = () => {
+        const q = elSearch.value || '';
+        const sortMode = elSort.value;
+        const all = applySort(filtered(q), sortMode);
+        const items = paginate(all, page, PAGE_SIZE);
+        elContent.innerHTML = `<div class=\"page-list\">${items.map(e => `
+          <div class=\"event-item\">
+            <div class=\"event-info\">
+              <h4>${e.title}</h4>
+              <p>${e.description}</p>
+            </div>
+            <div class=\"event-chip\">${e.date}</div>
+          </div>
+        `).join('')}</div>${renderPager(all.length, PAGE_SIZE, page)}`;
+        document.getElementById('pg-prev')?.addEventListener('click', ()=>{ if(page>1){page--; render();}});
+        document.getElementById('pg-next')?.addEventListener('click', ()=>{ const pages=Math.ceil(all.length/PAGE_SIZE); if(page<pages){page++; render();}});
+      };
+
+      elSearch.addEventListener('input', ()=>{ page=1; render(); });
+      elSort.addEventListener('change', ()=>{ page=1; render(); });
+      render();
+    </script>
+  </body>
+</html>

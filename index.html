@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Filialcockpit Taskcenter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-icon">🏬</span>
+          <div>
+            <h1>Taskcenter</h1>
+            <p>Filialcockpit</p>
+          </div>
+        </div>
+        <nav class="nav">
+          <div class="nav-section">
+            <p class="nav-label">Navigation</p>
+            <a class="nav-link active" href="#">
+              <span>Übersicht</span>
+            </a>
+            <a class="nav-link" href="#aufgaben">
+              <span>Aufgaben</span>
+              <span id="tasks-badge" class="badge">0</span>
+            </a>
+            <a class="nav-link" href="updates.html">
+              <span>Zentrale Updates</span>
+            </a>
+            <a class="nav-link" href="guides.html">
+              <span>Anleitungen</span>
+            </a>
+            <a class="nav-link" href="events.html">
+              <span>Aktionstage</span>
+            </a>
+            <a class="nav-link" href="/ui5.html">
+              <span>OpenUI5 (Preview)</span>
+            </a>
+          </div>
+          <div class="nav-section">
+            <p class="nav-label">Team & Systeme</p>
+            <a class="nav-link" href="#team">
+              <span>Teamplanung</span>
+            </a>
+            <a class="nav-link" href="#ressourcen">
+              <span>Ressourcen</span>
+            </a>
+            <a class="nav-link" href="tasks-board.html">
+              <span>Tasks Board</span>
+            </a>
+          </div>
+        </nav>
+        <div class="sidebar-footer">
+          <p class="sidebar-footer__title">Heute</p>
+          <p class="sidebar-footer__date" id="sidebar-date"></p>
+          <button id="new-task-btn" class="primary-btn">
+            + Neue Aufgabe
+          </button>
+        </div>
+      </aside>
+      <main class="main">
+        <header class="main-header">
+          <div>
+            <p class="welcome">Willkommen zurück, <strong>Anna</strong></p>
+            <h2>Guten Start in den Aktionstag "Frische-Woche"</h2>
+          </div>
+          <div class="header-actions">
+            <div class="search">
+              <input id="global-search" type="search" placeholder="Suchen nach Aufgaben, Anleitungen..." aria-label="Suche" />
+            </div>
+            <button id="role-toggle" class="ghost-btn" title="Rolle umschalten">Rolle: Leitung</button>
+            <button id="employee-switcher-btn" class="ghost-btn">Mitarbeiterwechsel</button>
+            <div class="avatar">A</div>
+          </div>
+        </header>
+
+        <section class="grid grid--stats" aria-label="Kennzahlen">
+          <article class="card stat-card">
+            <h3>Aufgaben heute</h3>
+            <p class="stat-card__value" id="stat-today">0</p>
+            <p class="stat-card__hint">Davon 2 mit hoher Priorität</p>
+          </article>
+          <article class="card stat-card">
+            <h3>Überfällige Aufgaben</h3>
+            <p class="stat-card__value" id="stat-overdue">0</p>
+            <p class="stat-card__hint">Bitte zeitnah nacharbeiten</p>
+          </article>
+          <article class="card stat-card">
+            <h3>Neue HQ-Updates</h3>
+            <p class="stat-card__value" id="stat-updates">0</p>
+            <p class="stat-card__hint">Seit gestern</p>
+          </article>
+          <article class="card stat-card">
+            <h3>Leitfäden aktualisiert</h3>
+            <p class="stat-card__value" id="stat-guides">0</p>
+            <p class="stat-card__hint">Diese Woche</p>
+          </article>
+        </section>
+
+        <section class="grid grid--content">
+          <article class="card" id="aufgaben">
+            <div class="card__header">
+              <div>
+                <h3>Aufgabenliste</h3>
+                <p>Anstehende Aktivitäten für Team und Filiale</p>
+              </div>
+              <div class="tabs" role="tablist">
+                <button class="tab active" data-filter="today">Heute</button>
+                <button class="tab" data-filter="week">Diese Woche</button>
+                <button class="tab" data-filter="all">Alle</button>
+              </div>
+            </div>
+            <div class="toolbar" role="region" aria-label="Aufgaben-Tools">
+              <div class="toolbar__left">
+                <label class="check">
+                  <input id="select-all" type="checkbox" />
+                  <span>Alle</span>
+                </label>
+                <span id="selection-count" class="chip">0 ausgewählt</span>
+                <select id="filter-priority" aria-label="Priorität filtern">
+                  <option value="">Priorität: Alle</option>
+                  <option value="hoch">Hoch</option>
+                  <option value="mittel">Mittel</option>
+                  <option value="niedrig">Niedrig</option>
+                </select>
+                <select id="filter-status" aria-label="Status filtern">
+                  <option value="">Status: Alle</option>
+                  <option value="offen">Offen</option>
+                  <option value="überfällig">Überfällig</option>
+                  <option value="abgeschlossen">Abgeschlossen</option>
+                </select>
+                <select id="sort-select" aria-label="Sortierung">
+                  <option value="created_desc">Neueste zuerst</option>
+                  <option value="created_asc">Älteste zuerst</option>
+                  <option value="priority_desc">Priorität hoch→niedrig</option>
+                  <option value="priority_asc">Priorität niedrig→hoch</option>
+                  <option value="status">Status</option>
+                </select>
+              </div>
+              <div class="toolbar__right">
+                <button id="select-visible" class="ghost-btn ghost-btn--sm">Sichtbare auswählen</button>
+                <button id="invert-selection" class="ghost-btn ghost-btn--sm">Auswahl umkehren</button>
+                <button id="clear-selection" class="ghost-btn ghost-btn--sm">Auswahl leeren</button>
+                <button id="bulk-complete" class="ghost-btn ghost-btn--sm">Auswahl erledigen</button>
+                <button id="bulk-delete" class="ghost-btn ghost-btn--sm">Auswahl löschen</button>
+                <button id="export-btn" class="ghost-btn ghost-btn--sm">Exportieren</button>
+                <button id="import-btn" class="ghost-btn ghost-btn--sm">Importieren</button>
+                <input id="import-file" type="file" accept="application/json" class="hidden" />
+              </div>
+            </div>
+            <ul class="task-list" id="task-list" role="list"></ul>
+          </article>
+
+          <article class="card" id="updates">
+            <div class="card__header">
+              <h3>Zentrale Updates</h3>
+              <a href="updates.html" class="ghost-btn ghost-btn--sm">Alle ansehen</a>
+            </div>
+            <div class="timeline" id="updates-list"></div>
+          </article>
+
+          <article class="card" id="anleitungen">
+            <div class="card__header">
+              <h3>Anleitungen & Systeme</h3>
+              <a href="guides.html" class="ghost-btn ghost-btn--sm">Bibliothek öffnen</a>
+            </div>
+            <div class="guide-grid" id="guides-list"></div>
+          </article>
+
+          <article class="card" id="aktionstage">
+            <div class="card__header">
+              <h3>Aktionstage & Kampagnen</h3>
+              <a href="events.html" class="ghost-btn ghost-btn--sm">Kalender</a>
+            </div>
+            <ul class="event-list" id="events-list"></ul>
+          </article>
+
+          <article class="card highlight" id="ressourcen">
+            <div class="card__header">
+              <h3>Schnelle Aktionen</h3>
+            </div>
+            <div class="quick-actions">
+              <button class="primary-btn primary-btn--ghost">Inventur melden</button>
+              <button class="primary-btn primary-btn--ghost">Warenbestand prüfen</button>
+              <button class="primary-btn primary-btn--ghost">Technik-Support</button>
+              <button class="primary-btn primary-btn--ghost">Einarbeitung starten</button>
+            </div>
+          </article>
+
+          <article class="card" id="team">
+            <div class="card__header">
+              <h3>Team heute</h3>
+              <p>Wer ist im Einsatz?</p>
+            </div>
+            <ul class="team-list" id="team-list"></ul>
+          </article>
+        </section>
+      </main>
+    </div>
+    <!-- Fullscreen Page View -->
+    <section id="page-view" class="page hidden" aria-live="polite" aria-atomic="true">
+      <header class="page__header">
+        <button id="page-back" class="ghost-btn">Zurück</button>
+        <div class="page__header-right">
+          <input id="page-search" type="search" placeholder="Suchen..." aria-label="Seitensuche" />
+        </div>
+      </header>
+      <div id="page-title" class="page__title"></div>
+      <div id="page-content" class="page__content"></div>
+    </section>
+    <!-- Modals -->
+    <div id="modal-backdrop" class="modal-backdrop hidden" aria-hidden="true"></div>
+
+    <section id="task-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
+      <header class="modal__header">
+        <h3 id="task-modal-title">Neue Aufgabe</h3>
+        <button class="modal__close" data-close-modal>&times;</button>
+      </header>
+      <form id="task-form" class="modal__body">
+        <input type="hidden" id="task-id" />
+        <div class="form-row">
+          <label for="task-title">Titel</label>
+          <input id="task-title" name="title" type="text" required />
+        </div>
+        <div class="form-row">
+          <label for="task-desc">Beschreibung</label>
+          <textarea id="task-desc" name="description" rows="3"></textarea>
+        </div>
+        <div class="form-grid">
+          <div class="form-row">
+            <label for="task-priority">Priorität</label>
+            <select id="task-priority" name="priority">
+              <option value="hoch">Hoch</option>
+              <option value="mittel">Mittel</option>
+              <option value="niedrig">Niedrig</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="task-due">Fälligkeitsdatum</label>
+            <input id="task-due" name="dueAt" type="datetime-local" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="task-tags">Tags (Kommagetrennt)</label>
+          <input id="task-tags" name="tags" type="text" placeholder="Frische, Qualität" />
+        </div>
+        <footer class="modal__footer">
+          <button type="button" class="ghost-btn" data-close-modal>Abbrechen</button>
+          <button type="submit" class="primary-btn">Speichern</button>
+        </footer>
+      </form>
+    </section>
+
+    <section id="details-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="details-modal-title">
+      <header class="modal__header">
+        <h3 id="details-modal-title">Aufgabe</h3>
+        <button class="modal__close" data-close-modal>&times;</button>
+      </header>
+      <div class="modal__body" id="details-content"></div>
+      <footer class="modal__footer">
+        <button class="ghost-btn" data-close-modal>Schließen</button>
+      </footer>
+    </section>
+
+    <section id="employee-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="employee-modal-title">
+      <header class="modal__header">
+        <h3 id="employee-modal-title">Mitarbeiter wechseln</h3>
+        <button class="modal__close" data-close-modal>&times;</button>
+      </header>
+      <form id="employee-form" class="modal__body">
+        <div class="form-row">
+          <label for="employee-name">Name</label>
+          <input id="employee-name" type="text" placeholder="Anna Müller" required />
+        </div>
+        <footer class="modal__footer">
+          <button type="button" class="ghost-btn" data-close-modal>Abbrechen</button>
+          <button type="submit" class="primary-btn">Übernehmen</button>
+        </footer>
+      </form>
+    </section>
+
+    <!-- Toasts -->
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+    <script src="./assets/config.js"></script>
+    <script src="./assets/script.js"></script>
+  </body>
+</html>

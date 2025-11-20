@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Update – Taskcenter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <nav class="topnav">
+      <div class="topnav__inner">
+        <div class="topnav__links">
+          <a href="./index.html" class="ghost-btn ghost-btn--sm">Übersicht</a>
+          <a href="./updates.html" class="ghost-btn ghost-btn--sm active">Updates</a>
+          <a href="./guides.html" class="ghost-btn ghost-btn--sm">Anleitungen</a>
+          <a href="./events.html" class="ghost-btn ghost-btn--sm">Aktionstage</a>
+          <a href="./tasks-board.html" class="ghost-btn ghost-btn--sm">Board</a>
+        </div>
+      </div>
+    </nav>
+    <section class="page" style="position: static; min-height: 100vh;">
+      <header class="page__header" style="padding:24px;">
+        <a href="./updates.html" class="ghost-btn">Zurück</a>
+      </header>
+      <div id="page-title" class="page__title" style="padding:0 24px;">Update</div>
+      <div id="page-content" class="page__content" style="margin:0 24px 24px"></div>
+    </section>
+    <script src="./assets/data.js"></script>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const id = Number(params.get('id'));
+      const el = document.getElementById('page-content');
+      const item = (window.APP_DATA?.updates || []).find(u => u.id === id);
+      if (!item) {
+        el.innerHTML = '<p>Nicht gefunden.</p>';
+      } else {
+        el.innerHTML = `
+          <article class="timeline-item" style="padding-left:0">
+            <h2 style="margin:0 0 8px">${item.title}</h2>
+            <div class="timeline-meta" style="margin-bottom:12px">${item.date}</div>
+            <p style="font-size:1rem; line-height:1.6">${item.content}</p>
+          </article>
+        `;
+        document.getElementById('page-title').textContent = item.title;
+      }
+    </script>
+  </body>
+</html>

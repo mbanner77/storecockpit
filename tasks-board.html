@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tasks Board – Taskcenter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./assets/styles.css" />
+    <style>
+      .board {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 24px;
+      }
+      .column {
+        background: rgba(255,255,255,.9); border: 1px solid var(--color-border); border-radius: 12px;
+        display: flex; flex-direction: column; min-height: 60vh;
+      }
+      .column__header { padding: 12px 16px; border-bottom: 1px solid var(--color-border); font-weight: 700; }
+      .column__list { padding: 12px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+      .card-item { background: rgba(31,111,235,.06); border: 1px solid rgba(31,111,235,.12); border-radius: 10px; padding: 10px; cursor: grab; }
+      .column__list.drag-over { outline: 2px dashed rgba(31,111,235,.5); outline-offset: -6px; }
+      .board-toolbar { display:flex; justify-content: space-between; align-items:center; gap:12px; padding:24px; }
+    </style>
+  </head>
+  <body>
+    <nav class="topnav">
+      <div class="topnav__inner">
+        <div class="topnav__links">
+          <a href="./index.html" class="ghost-btn ghost-btn--sm">Übersicht</a>
+          <a href="./updates.html" class="ghost-btn ghost-btn--sm">Updates</a>
+          <a href="./guides.html" class="ghost-btn ghost-btn--sm">Anleitungen</a>
+          <a href="./events.html" class="ghost-btn ghost-btn--sm">Aktionstage</a>
+          <a href="./tasks-board.html" class="ghost-btn ghost-btn--sm active">Board</a>
+        </div>
+      </div>
+    </nav>
+    <header class="board-toolbar">
+      <a href="./index.html" class="ghost-btn">Zurück</a>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <select id="board-filter" aria-label="Filter">
+          <option value="">Alle</option>
+          <option value="hoch">Hoch</option>
+          <option value="mittel">Mittel</option>
+          <option value="niedrig">Niedrig</option>
+        </select>
+        <input id="board-search" type="search" placeholder="Suchen..." />
+      </div>
+    </header>
+    <section class="board">
+      <article class="column" data-status="offen">
+        <div class="column__header">Offen</div>
+        <div class="column__list" id="col-offen"></div>
+      </article>
+      <article class="column" data-status="in_arbeit">
+        <div class="column__header">In Arbeit</div>
+        <div class="column__list" id="col-in_arbeit"></div>
+      </article>
+      <article class="column" data-status="abgeschlossen">
+        <div class="column__header">Abgeschlossen</div>
+        <div class="column__list" id="col-abgeschlossen"></div>
+      </article>
+    </section>
+
+    <script>
+      const STORAGE_KEY = 'filial_taskcenter_state_v1';
+      const readState = () => {
+        try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : { tasks: [] }; } catch(e){ return { tasks: [] }; }
+      };
+      const writeState = (s) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch(e){} };
+
+      const els = {
+        offen: document.getElementById('col-offen'),
+        in_arbeit: document.getElementById('col-in_arbeit'),
+        abgeschlossen: document.getElementById('col-abgeschlossen'),
+        filter: document.getElementById('board-filter'),
+        search: document.getElementById('board-search'),
+      };
+
+      let state = readState();
+      state.tasks.forEach(t => { if(!t.status) t.status='offen'; });
+      const priorityOrder = { hoch: 3, mittel: 2, niedrig: 1 };
+      let query = '';
+      let prio = '';
+
+      const card = (t) => {
+        const div = document.createElement('div');
+        div.className = 'card-item';
+        div.draggable = true;
+        div.dataset.id = t.id;
+        div.innerHTML = `<strong>${t.title}</strong><div style="font-size:.9rem;color:#5b6b7b;">${t.description||''}</div><div class="task-meta" style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
+          <span class="tag">${t.priority||''}</span>
+          ${t.tags?.slice(0,3).map(x=>`<span class=tag>${x}</span>`).join('')||''}
+        </div>`;
+        div.addEventListener('dragstart', (e)=>{
+          e.dataTransfer.setData('text/plain', String(t.id));
+        });
+        return div;
+      };
+
+      const filterTasks = (list) => list.filter(t =>
+        (!prio || t.priority===prio) &&
+        (!query || (t.title + ' ' + (t.description||'') + ' ' + (t.tags||[]).join(' ')).toLowerCase().includes(query))
+      );
+
+      const renderCol = (status, el) => {
+        el.innerHTML='';
+        let tasks = state.tasks.filter(t => (status==='in_arbeit' ? t.status==='in_arbeit' : t.status===status));
+        tasks = filterTasks(tasks).sort((a,b)=> (priorityOrder[b.priority]||0)-(priorityOrder[a.priority]||0));
+        tasks.forEach(t => el.appendChild(card(t)));
+      };
+
+      const render = () => {
+        query = els.search.value?.toLowerCase() || '';
+        prio = els.filter.value || '';
+        renderCol('offen', els.offen);
+        renderCol('in_arbeit', els.in_arbeit);
+        renderCol('abgeschlossen', els.abgeschlossen);
+      };
+
+      document.querySelectorAll('.column__list').forEach(list => {
+        list.addEventListener('dragover', (e)=>{ e.preventDefault(); list.classList.add('drag-over'); });
+        list.addEventListener('dragleave', ()=> list.classList.remove('drag-over'));
+        list.addEventListener('drop', (e)=>{
+          e.preventDefault(); list.classList.remove('drag-over');
+          const id = Number(e.dataTransfer.getData('text/plain'));
+          const toStatus = list.parentElement.dataset.status;
+          const t = state.tasks.find(x=>x.id===id);
+          if (t) {
+            t.status = toStatus;
+            // Wenn in Arbeit-Status neu ist, sicherstellen, dass UI kennt
+            writeState(state);
+            render();
+          }
+        });
+      });
+
+      els.filter.addEventListener('change', render);
+      els.search.addEventListener('input', render);
+      render();
+    </script>
+  </body>
+</html>

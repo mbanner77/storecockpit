@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Taskcenter (OpenUI5)</title>
+    <script id="sap-ui-bootstrap" src="https://ui5.sap.com/resources/sap-ui-core.js"
+      data-sap-ui-theme="sap_horizon"
+      data-sap-ui-compatVersion="edge"
+      data-sap-ui-preload="async"
+      data-sap-ui-libs="sap.m,sap.ui.unified,sap.f"
+      data-sap-ui-xx-waitForTheme="true">
+    </script>
+    <link rel="stylesheet" href="./assets/styles.css" />
+    <style>
+      html, body, #content { height: 100%; }
+    </style>
+  </head>
+  <body class="sapUiBody" id="content">
+    <script src="./assets/config.js"></script>
+    <script>
+      window.addEventListener('error', function(e){ try { console.error(e.error || e.message); sap.m && sap.m.MessageToast && sap.m.MessageToast.show('Fehler: '+ (e.message||'Unbekannt')); } catch(_){} });
+      sap.ui.getCore().attachInit(async function() {
+        const api = (window.AppConfig && window.AppConfig.apiBaseUrl) || '';
+        let authToken = localStorage.getItem('demo_token') || '';
+        const fmt = {
+          overdue: function(dueAt){
+            if (!dueAt) return false;
+            try { return new Date(dueAt).getTime() < Date.now(); } catch(e){ return false; }
+          },
+          dueText: function(dueAt){
+            if (!dueAt) return '';
+            const d = new Date(dueAt);
+            return d.toLocaleString('de-DE');
+          }
+        };
+
+        const model = new sap.ui.model.json.JSONModel({
+          role: 'lead',
+          search: '',
+          sort: 'created_desc',
+          statusFilter: '',
+          priorityFilter: '',
+          tasks: [], updates: [], guides: [], events: [],
+          notificationsCount: 0
+        });
+
+        const busy = new sap.m.BusyDialog();
+        async function loadAll(){
+          busy.open();
+          try {
+            const [tasks, updates, guides, events] = await Promise.all([
+              fetch(api + '/tasks').then(r=>r.json()),
+              fetch(api + '/updates').then(r=>r.json()),
+              fetch(api + '/guides').then(r=>r.json()),
+              fetch(api + '/events').then(r=>r.json()),
+            ]);
+            if (tasks && tasks.items) { model.setProperty('/tasks', tasks.items); model.setProperty('/tasksTotal', tasks.total||tasks.items.length); }
+            else { model.setProperty('/tasks', tasks||[]); model.setProperty('/tasksTotal', Array.isArray(tasks)?tasks.length:0); }
+            model.setProperty('/updates', updates);
+            model.setProperty('/guides', guides);
+            model.setProperty('/events', events);
+          } catch(e){
+            const sd = window.APP_DATA || {};
+            model.setProperty('/updates', sd.updates || []);
+            model.setProperty('/guides', sd.guides || []);
+            model.setProperty('/events', sd.events || []);
+          } finally { busy.close(); }
+        }
+        await loadAll();
+        // polling for new updates/events
+        let lastUpdateCount = Array.isArray(model.getProperty('/updates')) ? model.getProperty('/updates').length : 0;
+        let lastEventCount = Array.isArray(model.getProperty('/events')) ? model.getProperty('/events').length : 0;
+        setInterval(async ()=>{
+          try{
+            const [u, e] = await Promise.all([
+              fetch(api + '/updates').then(r=>r.json()),
+              fetch(api + '/events').then(r=>r.json())
+            ]);
+            const uLen = Array.isArray(u)?u.length:(u.items?u.items.length:0);
+            const eLen = Array.isArray(e)?e.length:(e.items?e.items.length:0);
+            if (uLen > lastUpdateCount) {
+              model.setProperty('/updates', Array.isArray(u)?u:(u.items||[]));
+              const inc = (uLen - lastUpdateCount);
+              model.setProperty('/notificationsCount', (model.getProperty('/notificationsCount')||0) + inc);
+              sap.m.MessageToast.show(`${inc} neue Updates`);
+              lastUpdateCount = uLen;
+            }
+            if (eLen > lastEventCount) {
+              model.setProperty('/events', Array.isArray(e)?e:(e.items||[]));
+              const inc = (eLen - lastEventCount);
+              model.setProperty('/notificationsCount', (model.getProperty('/notificationsCount')||0) + inc);
+              sap.m.MessageToast.show(`${inc} neue Events`);
+              lastEventCount = eLen;
+            }
+          }catch(_){/* ignore */}
+        }, 60000);
+
+        function authHeaders(){ const h={'Content-Type':'application/json'}; if (authToken) h['Authorization'] = 'Bearer '+authToken; return h; }
+        async function createTask(payload){
+          const r = await fetch(api + '/tasks', { method:'POST', headers: authHeaders(), body: JSON.stringify(payload)});
+          const t = await r.json();
+          const arr = model.getProperty('/tasks').slice(); arr.unshift(t); model.setProperty('/tasks', arr);
+          sap.m.MessageToast.show('Aufgabe erstellt');
+        }
+        async function updateTask(id, payload){
+          const r = await fetch(api + '/tasks/' + id, { method:'PUT', headers: authHeaders(), body: JSON.stringify(payload)});
+          const t = await r.json();
+          const arr = model.getProperty('/tasks').slice();
+          const idx = arr.findIndex(x=>x.id===t.id); if (idx>-1) { arr[idx] = t; model.setProperty('/tasks', arr); }
+          sap.m.MessageToast.show('Aufgabe gespeichert');
+        }
+        async function deleteTask(id){
+          await fetch(api + '/tasks/' + id, { method:'DELETE', headers: authHeaders() });
+          const arr = model.getProperty('/tasks').slice().filter(x=>x.id!==id); model.setProperty('/tasks', arr);
+          sap.m.MessageToast.show('Aufgabe gelöscht');
+        }
+
+        function taskSorter(){
+          const sort = model.getProperty('/sort');
+          if (sort==='created_asc') return [ new sap.ui.model.Sorter('createdAt', false) ];
+          if (sort==='priority_desc') return [ new sap.ui.model.Sorter('priority', true) ];
+          if (sort==='priority_asc') return [ new sap.ui.model.Sorter('priority', false) ];
+          return [ new sap.ui.model.Sorter('createdAt', true) ];
+        }
+
+        const app = new sap.m.App();
+        const shell = new sap.f.ShellBar({
+          title: 'Taskcenter (OpenUI5)',
+          homeIcon: 'sap-icon://home',
+          showNotifications: true,
+          notificationsNumber: '{/notificationsCount}',
+          additionalContent: [ new sap.m.Button({ text:'Token', icon:'sap-icon://key', press: openTokenDialog }) ]
+        });
+        const notifyDlgModel = new sap.ui.model.json.JSONModel({ items: [] });
+        const notifyDlg = new sap.m.Dialog({ title:'Neuigkeiten', contentWidth:'600px', content:[
+          new sap.m.List({ items:{ path:'n>/items', template: new sap.m.StandardListItem({ title:'{n>title}', description:'{n>content}', info:'{n>date}' }) } })
+        ], endButton: new sap.m.Button({ text:'Schließen', press: ()=> notifyDlg.close() }) });
+        notifyDlg.setModel(notifyDlgModel, 'n');
+        shell.attachNotificationsPressed(()=>{
+          const items = (model.getProperty('/updates')||[]).slice(0,10);
+          notifyDlgModel.setProperty('/items', items);
+          model.setProperty('/notificationsCount', 0);
+          notifyDlg.open();
+        });
+        const page = new sap.m.Page({ customHeader: new sap.m.Bar({ contentMiddle:[ new sap.m.Title({ text:'Taskcenter (OpenUI5)' }) ] }) });
+
+        // Toolbar
+        // Tasks server-side query state
+        model.setProperty('/tasksPage', 1);
+        model.setProperty('/tasksPageSize', 10);
+        model.setProperty('/tasksTotal', 0);
+        async function loadTasks(){
+          const q = encodeURIComponent(model.getProperty('/search')||'');
+          const status = encodeURIComponent(model.getProperty('/statusFilter')||'');
+          const prio = encodeURIComponent(model.getProperty('/priorityFilter')||'');
+          const sort = encodeURIComponent(model.getProperty('/sort')||'created_desc');
+          const page = Number(model.getProperty('/tasksPage')||1);
+          const pageSize = Number(model.getProperty('/tasksPageSize')||10);
+          const url = `${api}/tasks?page=${page}&pageSize=${pageSize}` + (q?`&q=${q}`:'') + (status?`&status=${status}`:'') + (prio?`&priority=${prio}`:'') + (sort?`&sort=${sort}`:'');
+          try {
+            list.setBusy(true);
+            const resp = await fetch(url);
+            const json = await resp.json();
+            const items = json.items || [];
+            model.setProperty('/tasks', items);
+            model.setProperty('/tasksTotal', json.total || items.length);
+          } finally { list.setBusy(false); }
+        }
+        const search = new sap.m.SearchField({ width: '100%', liveChange: async e=>{ model.setProperty('/search', e.getSource().getValue()); model.setProperty('/tasksPage', 1); await loadTasks(); } });
+        const sortSelect = new sap.m.Select({ width:'12rem', selectedKey:'{/sort}', change: async e=>{ model.setProperty('/sort', e.getSource().getSelectedKey()); model.setProperty('/tasksPage', 1); await loadTasks(); }, items:[
+          new sap.ui.core.Item({ key:'created_desc', text:'Neueste zuerst' }),
+          new sap.ui.core.Item({ key:'created_asc', text:'Älteste zuerst' }),
+          new sap.ui.core.Item({ key:'priority_desc', text:'Prio hoch → niedrig' }),
+          new sap.ui.core.Item({ key:'priority_asc', text:'Prio niedrig → hoch' })
+        ]});
+        const statusSel = new sap.m.Select({ width:'10rem', change: async e=>{ model.setProperty('/statusFilter', e.getSource().getSelectedKey()); model.setProperty('/tasksPage', 1); await loadTasks(); }, items:[
+          new sap.ui.core.Item({ key:'', text:'Status: Alle' }),
+          new sap.ui.core.Item({ key:'offen', text:'Offen' }),
+          new sap.ui.core.Item({ key:'in_arbeit', text:'In Arbeit' }),
+          new sap.ui.core.Item({ key:'abgeschlossen', text:'Abgeschlossen' })
+        ]});
+        const prioSel = new sap.m.Select({ width:'10rem', change: async e=>{ model.setProperty('/priorityFilter', e.getSource().getSelectedKey()); model.setProperty('/tasksPage', 1); await loadTasks(); }, items:[
+          new sap.ui.core.Item({ key:'', text:'Prio: Alle' }),
+          new sap.ui.core.Item({ key:'hoch', text:'Hoch' }),
+          new sap.ui.core.Item({ key:'mittel', text:'Mittel' }),
+          new sap.ui.core.Item({ key:'niedrig', text:'Niedrig' })
+        ]});
+        const roleBtn = new sap.m.Button({ text: '{= ${/role} === "lead" ? "Rolle: Leitung" : "Rolle: Mitarbeiter" }', press: ()=>{
+          const r = model.getProperty('/role')==='lead'?'staff':'lead'; model.setProperty('/role', r);
+        }});
+        const addBtn = new sap.m.Button({ text:'Neue Aufgabe', type:'Emphasized', press: openCreateDialog });
+
+        // Bulk action buttons
+        const bulkCompleteBtn = new sap.m.Button({ text:'Ausgewählte erledigen', icon:'sap-icon://accept', press: onBulkComplete, enabled:false });
+        const bulkDeleteBtn = new sap.m.Button({ text:'Ausgewählte löschen', icon:'sap-icon://delete', type:'Reject', press: onBulkDelete, enabled:false, visible: '{= ${/role} === "lead" }' });
+        const exportBtn = new sap.m.Button({ text:'Export', icon:'sap-icon://export', press: onExport });
+        const importUploader = new sap.ui.unified.FileUploader({ icon:'sap-icon://upload', buttonOnly:true, sameFilenameAllowed:true, fileType:['json'], change:onImportChange });
+
+        const toolbar = new sap.m.Toolbar({ content:[
+          new sap.m.ToolbarSpacer(),
+          search,
+          new sap.m.ToolbarSeparator(),
+          sortSelect,
+          statusSel,
+          prioSel,
+          new sap.m.ToolbarSpacer(),
+          bulkCompleteBtn,
+          bulkDeleteBtn,
+          exportBtn,
+          importUploader,
+          new sap.m.ToolbarSeparator(),
+          roleBtn,
+          addBtn
+        ]});
+
+        // List & binding with formatter and filters
+        const list = new sap.m.List({ inset:false, mode:'MultiSelect', growing:true, growingScrollToLoad:true, selectionChange:updateBulkButtons });
+        list.setNoDataText('Keine Aufgaben gefunden');
+        const itemTpl = new sap.m.ObjectListItem({
+          title: '{title}',
+          number: { path: 'dueAt', formatter: fmt.dueText },
+          numberState: { path: 'dueAt', formatter: function(d){ return fmt.overdue(d)? 'Error' : 'None'; } },
+          attributes: [
+            new sap.m.ObjectAttribute({ title:'Prio', text:'{priority}' }),
+            new sap.m.ObjectAttribute({ title:'Status', text:'{status}' })
+          ],
+          firstStatus: new sap.m.ObjectStatus({ text:'{priority}', state:'{= ${priority} === "hoch" ? "Error" : (${priority} === "mittel" ? "Warning" : "Success") }' }),
+          type: 'Active'
+        });
+        list.bindItems({ path:'/tasks', template: itemTpl });
+
+        // remove client-side filters; server does it
+
+        list.attachItemPress(function(ev){
+          const ctx = ev.getParameter('listItem').getBindingContext();
+          const t = ctx.getObject();
+          openEditDialog(t);
+        });
+
+        function updateBulkButtons(){
+          const sel = list.getSelectedItems();
+          bulkCompleteBtn.setEnabled(sel.length>0);
+          bulkDeleteBtn.setEnabled(sel.length>0 && model.getProperty('/role')==='lead');
+        }
+
+        async function onBulkComplete(){
+          const sel = list.getSelectedItems();
+          for (const it of sel){ const t = it.getBindingContext().getObject(); await updateTask(t.id, { status:'abgeschlossen' }); }
+          list.removeSelections(true); updateBulkButtons();
+          sap.m.MessageToast.show('Ausgewählte Aufgaben erledigt');
+        }
+        async function onBulkDelete(){
+          const sel = list.getSelectedItems();
+          for (const it of sel){ const t = it.getBindingContext().getObject(); await deleteTask(t.id); }
+          list.removeSelections(true); updateBulkButtons();
+          sap.m.MessageToast.show('Ausgewählte Aufgaben gelöscht');
+        }
+        function onExport(){
+          const data = model.getProperty('/tasks')||[];
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a'); a.href = url; a.download = 'tasks-export.json'; a.click(); setTimeout(()=>URL.revokeObjectURL(url), 1000);
+        }
+        async function onImportChange(ev){
+          const file = ev.getParameter('files') && ev.getParameter('files')[0]; if (!file) return;
+          const text = await file.text();
+          try {
+            const arr = JSON.parse(text);
+            if (Array.isArray(arr)){
+              for (const t of arr){
+                const payload = { title: t.title||'Ohne Titel', description: t.description||'', priority: t.priority||'mittel', status: t.status||'offen', dueAt: t.dueAt||'' };
+                await createTask(payload);
+              }
+              sap.m.MessageToast.show('Import erfolgreich');
+            }
+          } catch(err){ sap.m.MessageToast.show('Import fehlgeschlagen'); }
+          ev.getSource().clear();
+        }
+
+        // Dialogs
+        let dlg;
+        function buildTaskForm(data){
+          const title = new sap.m.Input({ value: data.title || '' });
+          const desc = new sap.m.TextArea({ value: data.description || '', rows:4 });
+          const prio = new sap.m.Select({ selectedKey: data.priority || 'mittel', items:[
+            new sap.ui.core.Item({ key:'hoch', text:'Hoch' }),
+            new sap.ui.core.Item({ key:'mittel', text:'Mittel' }),
+            new sap.ui.core.Item({ key:'niedrig', text:'Niedrig' })
+          ]});
+          const status = new sap.m.Select({ selectedKey: data.status || 'offen', items:[
+            new sap.ui.core.Item({ key:'offen', text:'Offen' }),
+            new sap.ui.core.Item({ key:'in_arbeit', text:'In Arbeit' }),
+            new sap.ui.core.Item({ key:'abgeschlossen', text:'Abgeschlossen' })
+          ]});
+          const due = new sap.m.DateTimePicker({ value: data.dueAt || '', displayFormat:'dd.MM.yyyy, HH:mm', valueFormat:'yyyy-MM-ddTHH:mm' });
+          return { title, desc, prio, status, due };
+        }
+        function openCreateDialog(){
+          const f = buildTaskForm({});
+          dlg = new sap.m.Dialog({ title:'Neue Aufgabe', contentWidth:'500px', content:[
+            new sap.m.Label({text:'Titel'}), f.title,
+            new sap.m.Label({text:'Beschreibung'}), f.desc,
+            new sap.m.Label({text:'Priorität'}), f.prio,
+            new sap.m.Label({text:'Status'}), f.status,
+            new sap.m.Label({text:'Fällig bis'}), f.due
+          ], beginButton: new sap.m.Button({ text:'Speichern', type:'Emphasized', press: async ()=>{
+            await createTask({ title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue() });
+            dlg.close(); dlg.destroy();
+          }}), endButton: new sap.m.Button({ text:'Abbrechen', press: ()=>{ dlg.close(); dlg.destroy(); } }) });
+          dlg.open();
+        }
+        async function fetchComments(taskId){
+          try{ const r = await fetch(api + '/tasks/' + taskId + '/comments'); return await r.json(); } catch(_){ return []; }
+        }
+        async function postComment(taskId, text){
+          const r = await fetch(api + '/tasks/' + taskId + '/comments', { method:'POST', headers: authHeaders(), body: JSON.stringify({ text, author: model.getProperty('/role') }) });
+          return await r.json();
+        }
+        function openTokenDialog(){
+          let input = new sap.m.Input({ value: authToken, placeholder:'demo-token' });
+          let d = new sap.m.Dialog({ title:'Auth Token', content:[ input ], beginButton: new sap.m.Button({ text:'Speichern', type:'Emphasized', press: ()=>{ authToken = input.getValue(); localStorage.setItem('demo_token', authToken); d.close(); sap.m.MessageToast.show('Token gespeichert'); } }), endButton: new sap.m.Button({ text:'Abbrechen', press: ()=> d.close() }) });
+          d.open();
+        }
+        async function openEditDialog(task){
+          const f = buildTaskForm(task);
+          const canDelete = model.getProperty('/role')==='lead';
+          const cModel = new sap.ui.model.json.JSONModel({ items: await fetchComments(task.id), text:'' });
+          const commentList = new sap.m.List({ headerText:'Kommentare' });
+          commentList.bindItems({ path:'c>/items', template: new sap.m.FeedListItem({ text:'{c>text}', sender:'{c>author}', info:'{c>createdAt}' }) });
+          const addBar = new sap.m.Bar({ contentMiddle:[ new sap.m.Input({ width:'100%', placeholder:'Kommentar...', value:'{c>/text}' }) ], contentRight:[ new sap.m.Button({ text:'Senden', icon:'sap-icon://send', press: async ()=>{ const text = cModel.getProperty('/text'); if(!text) return; const c= await postComment(task.id, text); const arr=cModel.getProperty('/items'); arr.push(c); cModel.setProperty('/items', arr); cModel.setProperty('/text',''); } }) ] });
+          const footer = new sap.m.HBox({ justifyContent:'SpaceBetween', width:'100%', items:[
+            new sap.m.Button({ text:'Löschen', type:'Reject', visible: canDelete, press: async ()=>{ await deleteTask(task.id); dlg.close(); dlg.destroy(); } }),
+            new sap.m.Button({ text:'Speichern', type:'Emphasized', press: async ()=>{ await updateTask(task.id, { title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue() }); dlg.close(); dlg.destroy(); } })
+          ]});
+          dlg = new sap.m.Dialog({ title:'Aufgabe bearbeiten', contentWidth:'600px', content:[
+            new sap.m.Label({text:'Titel'}), f.title,
+            new sap.m.Label({text:'Beschreibung'}), f.desc,
+            new sap.m.Label({text:'Priorität'}), f.prio,
+            new sap.m.Label({text:'Status'}), f.status,
+            new sap.m.Label({text:'Fällig bis'}), f.due,
+            new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Kommentare' }) ] }),
+            commentList,
+            addBar,
+          ], buttons: [], endButton: new sap.m.Button({ text:'Schließen', press: ()=>{ dlg.close(); dlg.destroy(); } }), customHeader: new sap.m.Bar({ contentRight: [] }) });
+          dlg.setModel(cModel,'c');
+          dlg.addContent(new sap.m.Toolbar({ content:[ new sap.m.ToolbarSpacer(), footer ] }));
+          dlg.open();
+        }
+
+        // ----- Updates/Guides/Events Tabs -----
+        function makeSimpleTab(cfg){
+          const sModelPath = cfg.path;
+          const descProp = cfg.desc || 'description';
+          const infoProp = cfg.info || '';
+          const state = new sap.ui.model.json.JSONModel({ q:'', sort:'title_asc', page:1, pageSize:10, total:0 });
+          const dataModel = new sap.ui.model.json.JSONModel({ items:[] });
+          async function loadPage(){
+            const page = state.getProperty('/page');
+            const pageSize = state.getProperty('/pageSize');
+            const q = encodeURIComponent(state.getProperty('/q')||'');
+            const sort = encodeURIComponent(state.getProperty('/sort')||'');
+            const url = api + sModelPath + `?page=${page}&pageSize=${pageSize}` + (q?`&q=${q}`:'') + (sort?`&sort=${sort}`:'');
+            try{
+              list.setBusy(true);
+              const resp = await fetch(url);
+              const json = await resp.json();
+              if (json && json.items){ dataModel.setProperty('/items', json.items); state.setProperty('/total', json.total||json.items.length); }
+              else { dataModel.setProperty('/items', json); state.setProperty('/total', Array.isArray(json)?json.length:0); }
+            }catch(_){ /* ignore */ } finally { list.setBusy(false); }
+          }
+          const search = new sap.m.SearchField({ liveChange: async e=>{ state.setProperty('/q', e.getSource().getValue()); state.setProperty('/page', 1); await loadPage(); } });
+          const sortSel = new sap.m.Select({ selectedKey:'title_asc', change: async e=>{ state.setProperty('/sort', e.getSource().getSelectedKey()); state.setProperty('/page', 1); await loadPage(); }, items:[
+            new sap.ui.core.Item({ key:'title_asc', text:'Titel A→Z' }),
+            new sap.ui.core.Item({ key:'title_desc', text:'Titel Z→A' })
+          ]});
+          const list = new sap.m.List({ growing:true, growingScrollToLoad:true });
+          list.setNoDataText('Keine Einträge');
+          const tpl = new sap.m.StandardListItem({
+            title: '{title}', description: `{${descProp}}`, info: infoProp?`{${infoProp}}`:'' , type: 'Active'
+          });
+          list.bindItems({ path: '/items', template: tpl });
+          list.setModel(dataModel);
+          list.attachItemPress((ev)=>{
+            const obj = ev.getParameter('listItem').getBindingContext().getObject();
+            const d = new sap.m.Dialog({ title: obj.title, contentWidth:'600px', content:[
+              new sap.m.Text({ text: descProp==='content'? (obj.content||'') : (obj.description||'') }),
+              infoProp? new sap.m.ObjectStatus({ text: `{${infoProp}}` }).bindObject(undefined): new sap.m.Text({ visible:false })
+            ], endButton: new sap.m.Button({ text:'Schließen', press: ()=> d.close() }) });
+            d.open();
+          });
+          const pageSizeSel = new sap.m.Select({ width:'8rem', selectedKey:'{state>/pageSize}', change: async (e)=>{ state.setProperty('/pageSize', Number(e.getSource().getSelectedKey())); state.setProperty('/page', 1); await loadPage(); }, items:[
+            new sap.ui.core.Item({ key:'5', text:'5 / Seite' }),
+            new sap.ui.core.Item({ key:'10', text:'10 / Seite' }),
+            new sap.ui.core.Item({ key:'20', text:'20 / Seite' })
+          ]});
+          const pager = new sap.m.Toolbar({ content:[
+            new sap.m.Button({ text:'Zurück', enabled: '{= ${state>/page} > 1 }', press: async ()=>{ const p = state.getProperty('/page')-1; state.setProperty('/page', p); await loadPage(); } }),
+            new sap.m.Text({ text: '{= "Seite " + ${state>/page} + " von " + Math.max(1, Math.ceil(${state>/total} / ${state>/pageSize})) }' }),
+            new sap.m.Button({ text:'Weiter', enabled:'{= ${state>/page} < Math.ceil(${state>/total} / ${state>/pageSize}) }', press: async ()=>{ const p = state.getProperty('/page')+1; state.setProperty('/page', p); await loadPage(); } }),
+            new sap.m.ToolbarSpacer(),
+            pageSizeSel
+          ]});
+          const vbox = new sap.m.VBox({ width:'100%', items:[ new sap.m.Toolbar({ content:[ search, new sap.m.ToolbarSpacer(), sortSel ] }), list, pager ] });
+          vbox.setModel(state, 'state');
+          // initial load
+          setTimeout(loadPage, 0);
+          return vbox;
+        }
+
+        // Board Tab (3 Spalten, Buttons zum Verschieben)
+        function makeBoard(){
+          function column(title, status){
+            const l = new sap.m.List({ headerText: title, mode:'None' });
+            const tpl = new sap.m.CustomListItem({ content:[
+              new sap.m.HBox({ width:'100%', justifyContent:'SpaceBetween', alignItems:'Center', items:[
+                new sap.m.VBox({ items:[
+                  new sap.m.Text({ text:'{title}' }),
+                  new sap.m.ObjectStatus({ text:'{priority}', state:'{= ${priority} === "hoch" ? "Error" : (${priority} === "mittel" ? "Warning" : "Success") }' })
+                ]}),
+                new sap.m.HBox({ items:[
+                  new sap.m.Button({ text:'→ Offen', visible: '{= ${status}!=="offen" }', press: (e)=> moveStatus(e, 'offen') }),
+                  new sap.m.Button({ text:'→ In Arbeit', visible: '{= ${status}!=="in_arbeit" }', press: (e)=> moveStatus(e, 'in_arbeit') }),
+                  new sap.m.Button({ text:'→ Abgeschlossen', visible: '{= ${status}!=="abgeschlossen" }', press: (e)=> moveStatus(e, 'abgeschlossen') })
+                ]})
+              ]})
+            ]});
+            l.bindItems({ path:'/tasks', template: tpl, filters:[ new sap.ui.model.Filter('status', sap.ui.model.FilterOperator.EQ, status) ] });
+            // Drag & Drop
+            l.addDragDropConfig(new sap.ui.core.dnd.DragInfo({ sourceAggregation:'items' }));
+            l.addDragDropConfig(new sap.ui.core.dnd.DropInfo({ targetAggregation:'items', drop: async (oEvent)=>{
+              const dragged = oEvent.getParameter('draggedControl');
+              const ctx = dragged && dragged.getBindingContext();
+              if (!ctx) return;
+              const t = ctx.getObject();
+              const newStatus = status;
+              if (t.status !== newStatus){ await updateTask(t.id, { status: newStatus }); sap.m.MessageToast.show('Per Drag&Drop verschoben'); }
+            }}));
+            return l;
+          }
+          return new sap.m.HBox({ width:'100%', alignItems:'Start', items:[
+            new sap.m.VBox({ width:'33%', items:[ column('Offen', 'offen') ]}),
+            new sap.m.VBox({ width:'33%', items:[ column('In Arbeit', 'in_arbeit') ]}),
+            new sap.m.VBox({ width:'33%', items:[ column('Abgeschlossen', 'abgeschlossen') ]}),
+          ]});
+        }
+
+        // Kalender Tab (Datum auswählen, Items anzeigen)
+        function makeCalendar(){
+          const cal = new sap.ui.unified.Calendar();
+          const list = new sap.m.List({ headerText:'Fällige Aufgaben & Events am gewählten Tag' });
+          function updateForDate(d){
+            const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            const sameDay = (xDate)=>{
+              try{
+                const xd = new Date(xDate);
+                return xd.getFullYear()===day.getFullYear() && xd.getMonth()===day.getMonth() && xd.getDate()===day.getDate();
+              }catch(_){ return false; }
+            };
+            const tasks = (page.getModel().getProperty('/tasks')||[]).filter(t=> t.dueAt && sameDay(t.dueAt)).map(t=>({ type:'Aufgabe', title:t.title, time:t.dueAt }));
+            const events = (page.getModel().getProperty('/events')||[]).filter(e=> e.date && sameDay(e.date)).map(e=>({ type:'Event', title:e.title, time:e.date }));
+            const items = tasks.concat(events).sort((a,b)=> new Date(a.time)-new Date(b.time));
+            const m = new sap.ui.model.json.JSONModel({ items });
+            list.setModel(m, 'c');
+          }
+          cal.attachSelect(()=>{
+            const s = cal.getSelectedDates()[0]; if (!s) return; updateForDate(s.getStartDate());
+          });
+          list.bindItems({ path:'c>/items', template: new sap.m.StandardListItem({ title:'{c>title}', description:'{c>type}', info:'{c>time}' }) });
+          const vbox = new sap.m.VBox({ items:[ cal, list ]});
+          // init with today
+          setTimeout(()=>{ const d=new Date(); cal.removeAllSelectedDates(); cal.addSelectedDate(new sap.ui.unified.DateRange({ startDate:d })); updateForDate(d); }, 0);
+          return vbox;
+        }
+
+        // Tabs Container
+        const tabs = new sap.m.IconTabBar({ expandable:false, items:[
+          new sap.m.IconTabFilter({ key:'tasks', text:'Aufgaben', count: '{= ${/tasks}.length }', icon:'sap-icon://task', content:[ toolbar, new sap.m.ObjectStatus({ text:'Überfällige Aufgaben werden rot markiert.', state:'None' }), list ] }),
+          new sap.m.IconTabFilter({ key:'updates', text:'Updates', count: '{= ${/updates}.length }', icon:'sap-icon://message-information', content:[ makeSimpleTab({ path:'/updates', title:'Updates', desc:'content', info:'date' }) ] }),
+          new sap.m.IconTabFilter({ key:'guides', text:'Anleitungen', count: '{= ${/guides}.length }', icon:'sap-icon://hint', content:[ makeSimpleTab({ path:'/guides', title:'Anleitungen', desc:'description' }) ] }),
+          new sap.m.IconTabFilter({ key:'events', text:'Aktionstage', count: '{= ${/events}.length }', icon:'sap-icon://calendar', content:[ makeSimpleTab({ path:'/events', title:'Aktionstage', desc:'description', info:'date' }) ] }),
+          new sap.m.IconTabFilter({ key:'board', text:'Board', icon:'sap-icon://kanban', content:[ makeBoard() ] }),
+          new sap.m.IconTabFilter({ key:'calendar', text:'Kalender', icon:'sap-icon://appointment-2', content:[ makeCalendar() ] })
+        ]});
+
+        // Assemble page
+        page.addContent(tabs);
+        app.addPage(new sap.m.Page({ customHeader: shell, content:[ page ] }));
+
+        // Bind model
+        page.setModel(model);
+        list.setModel(model);
+
+        // Initial server-side load for tasks
+        await loadTasks();
+
+        // App
+        app.placeAt('content');
+      });
+    </script>
+    <script src="./assets/data.js"></script>
+  </body>
+</html>
