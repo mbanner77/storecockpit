@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Filialcockpit Taskcenter</title>
+    <script>
+      (function(){
+        try{
+          if (!location.search.includes('legacy=true')) {
+            window.location.replace('./ui5.html');
+          }
+        }catch(e){}
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

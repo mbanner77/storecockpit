@@ -781,6 +781,58 @@ textarea {
   display: none !important;
 }
 
+/* Kanban Board spacing and visuals */
+.kanban {
+  width: 100%;
+  gap: 12px;
+}
+.kanban-col {
+  padding: 4px 6px;
+}
+.board-column {
+  background: rgba(255,255,255,0.8);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+  padding: 6px;
+}
+.board-column.drop-hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(31,111,235,0.15) inset, var(--shadow-sm);
+  background: rgba(31,111,235,0.05);
+  transition: box-shadow var(--transition), background var(--transition), border-color var(--transition);
+}
+.kanban .sapUiDnDDragging .kanban-card {
+  opacity: 0.9;
+}
+.board-column .sapMListHdrTBar {
+  padding: 6px 8px !important;
+  border-bottom: 1px solid var(--color-border);
+}
+.board-column .sapMListUl {
+  padding: 6px !important;
+}
+.kanban-card {
+  margin: 6px 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(31,111,235,0.10);
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(9,30,66,0.06);
+}
+.kanban-card__inner {
+  padding: 10px 12px;
+  gap: 6px;
+}
+.kanban-card .sapMHBox {
+  gap: 6px;
+}
+.kanban-card .sapMObjectAttributeDiv {
+  color: var(--color-text-muted);
+}
+.kanban-card .sapMObjStatusText {
+  font-size: 0.85rem;
+}
+
 /* Modals */
 .modal-backdrop {
   position: fixed;

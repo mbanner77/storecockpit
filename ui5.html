@@ -8,7 +8,7 @@
       data-sap-ui-theme="sap_horizon"
       data-sap-ui-compatVersion="edge"
       data-sap-ui-preload="async"
-      data-sap-ui-libs="sap.m,sap.ui.unified,sap.f"
+      data-sap-ui-libs="sap.m,sap.ui.unified,sap.f,sap.ui.layout"
       data-sap-ui-xx-waitForTheme="true">
     </script>
     <link rel="stylesheet" href="./assets/styles.css" />
@@ -16,13 +16,29 @@
       html, body, #content { height: 100%; }
     </style>
   </head>
-  <body class="sapUiBody" id="content">
+  <body class="sapUiBody sapUiSizeCompact" id="content">
     <script src="./assets/config.js"></script>
     <script>
-      window.addEventListener('error', function(e){ try { console.error(e.error || e.message); sap.m && sap.m.MessageToast && sap.m.MessageToast.show('Fehler: '+ (e.message||'Unbekannt')); } catch(_){} });
+      window.addEventListener('error', function(e){
+        try {
+          const msg = (e.message||'').toString();
+          console.error(e.error || msg);
+          if (msg && msg !== 'Script error.') {
+            sap.m && sap.m.MessageToast && sap.m.MessageToast.show('Fehler: '+ msg);
+          }
+        } catch(_){}
+      });
+      window.addEventListener('unhandledrejection', function(e){
+        try {
+          const reason = (e.reason && (e.reason.message||e.reason)) || 'Unbekannt';
+          console.error('Unhandled rejection:', e.reason);
+          sap.m && sap.m.MessageToast && sap.m.MessageToast.show('Fehler: '+ reason);
+        } catch(_){}
+      });
       sap.ui.getCore().attachInit(async function() {
         const api = (window.AppConfig && window.AppConfig.apiBaseUrl) || '';
         let authToken = localStorage.getItem('demo_token') || '';
+        let adminSettings = {};
         const fmt = {
           overdue: function(dueAt){
             if (!dueAt) return false;
@@ -32,7 +48,11 @@
             if (!dueAt) return '';
             const d = new Date(dueAt);
             return d.toLocaleString('de-DE');
-          }
+          },
+          prioState: function(p){ return p==='hoch' ? 'Error' : (p==='mittel' ? 'Warning' : 'Success'); },
+          statusState: function(s){ return s==='abgeschlossen' ? 'Success' : (s==='in_arbeit' ? 'Information' : 'None'); },
+          statusText: function(s){ if (s==='offen') return 'Offen'; if (s==='in_arbeit') return 'In Arbeit'; if (s==='abgeschlossen') return 'Abgeschlossen'; return s||''; },
+          relative: function(ts){ try{ const d=new Date(ts); const diff=Date.now()-d.getTime(); const m=Math.floor(diff/60000); if (m<1) return 'gerade eben'; if (m<60) return `vor ${m} Min`; const h=Math.floor(m/60); if (h<24) return `vor ${h} Std`; const dd=Math.floor(h/24); return `vor ${dd} Tg`; }catch(_){ return ''; } }
         };
 
         const model = new sap.ui.model.json.JSONModel({
@@ -42,10 +62,15 @@
           statusFilter: '',
           priorityFilter: '',
           tasks: [], updates: [], guides: [], events: [],
-          notificationsCount: 0
+          tasksCount: 0, updatesCount: 0, guidesCount: 0, eventsCount: 0,
+          notificationsCount: 0,
+          tasksLabel: ''
         });
 
         const busy = new sap.m.BusyDialog();
+        let chipBar; // declared early to avoid TDZ when updateFilterSummary runs before toolbar init
+        // Load admin settings
+        try{ adminSettings = JSON.parse(localStorage.getItem('admin_settings')||'{}'); }catch(_){ adminSettings = {}; }
         async function loadAll(){
           busy.open();
           try {
@@ -55,23 +80,26 @@
               fetch(api + '/guides').then(r=>r.json()),
               fetch(api + '/events').then(r=>r.json()),
             ]);
-            if (tasks && tasks.items) { model.setProperty('/tasks', tasks.items); model.setProperty('/tasksTotal', tasks.total||tasks.items.length); }
-            else { model.setProperty('/tasks', tasks||[]); model.setProperty('/tasksTotal', Array.isArray(tasks)?tasks.length:0); }
-            model.setProperty('/updates', updates);
-            model.setProperty('/guides', guides);
-            model.setProperty('/events', events);
+            if (tasks && tasks.items) { model.setProperty('/tasks', tasks.items); model.setProperty('/tasksTotal', tasks.total||tasks.items.length); model.setProperty('/tasksCount', tasks.items.length); }
+            else { const arr = Array.isArray(tasks)? tasks : (tasks||[]); model.setProperty('/tasks', arr); model.setProperty('/tasksTotal', arr.length); model.setProperty('/tasksCount', arr.length); }
+            model.setProperty('/tasksLabel', 'Aufgaben: ' + model.getProperty('/tasksCount') + (model.getProperty('/tasksTotal') ? (' / ' + model.getProperty('/tasksTotal')) : ''));
+            model.setProperty('/updates', updates); model.setProperty('/updatesCount', Array.isArray(updates)? updates.length : (updates.items?updates.items.length:0));
+            model.setProperty('/guides', guides); model.setProperty('/guidesCount', Array.isArray(guides)? guides.length : (guides.items?guides.items.length:0));
+            model.setProperty('/events', events); model.setProperty('/eventsCount', Array.isArray(events)? events.length : (events.items?events.items.length:0));
           } catch(e){
             const sd = window.APP_DATA || {};
-            model.setProperty('/updates', sd.updates || []);
-            model.setProperty('/guides', sd.guides || []);
-            model.setProperty('/events', sd.events || []);
+            model.setProperty('/updates', sd.updates || []); model.setProperty('/updatesCount', (sd.updates||[]).length);
+            model.setProperty('/guides', sd.guides || []); model.setProperty('/guidesCount', (sd.guides||[]).length);
+            model.setProperty('/events', sd.events || []); model.setProperty('/eventsCount', (sd.events||[]).length);
           } finally { busy.close(); }
         }
         await loadAll();
-        // polling for new updates/events
+        updateFilterSummary();
+        // polling for new updates/events (configurable)
         let lastUpdateCount = Array.isArray(model.getProperty('/updates')) ? model.getProperty('/updates').length : 0;
         let lastEventCount = Array.isArray(model.getProperty('/events')) ? model.getProperty('/events').length : 0;
-        setInterval(async ()=>{
+        let notifyIntervalId = null;
+        async function pollNotifications(){
           try{
             const [u, e] = await Promise.all([
               fetch(api + '/updates').then(r=>r.json()),
@@ -94,9 +122,33 @@
               lastEventCount = eLen;
             }
           }catch(_){/* ignore */}
-        }, 60000);
+        }
+        function startNotifyInterval(ms){
+          if (notifyIntervalId) { clearInterval(notifyIntervalId); notifyIntervalId = null; }
+          const interval = Math.max(15000, Number(ms)||60000);
+          notifyIntervalId = setInterval(pollNotifications, interval);
+        }
 
         function authHeaders(){ const h={'Content-Type':'application/json'}; if (authToken) h['Authorization'] = 'Bearer '+authToken; return h; }
+        async function fetchComments(taskId){
+          try{
+            const r = await fetch(api + '/tasks/' + taskId + '/comments');
+            return await r.json();
+          }catch(e){ console.error(e); return []; }
+        }
+        async function postComment(taskId, text){
+          try{
+            const r = await fetch(api + '/tasks/' + taskId + '/comments', { method:'POST', headers: authHeaders(), body: JSON.stringify({ text, author: (model.getProperty('/role')==='lead'?'Leitung':'Mitarbeiter') }) });
+            return await r.json();
+          }catch(e){ console.error(e); sap.m.MessageToast.show('Kommentar speichern fehlgeschlagen'); return null; }
+        }
+        function openTokenDialog(){
+          try {
+            var input = new sap.m.Input({ value: authToken || '', placeholder:'demo-token' });
+            var d = new sap.m.Dialog({ title:'Auth Token', content:[ input ], beginButton: new sap.m.Button({ text:'Speichern', type:'Emphasized', press: function(){ authToken = input.getValue(); try{ localStorage.setItem('demo_token', authToken); }catch(_){} d.close(); sap.m.MessageToast.show('Token gespeichert'); } }), endButton: new sap.m.Button({ text:'Abbrechen', press: function(){ d.close(); } }) });
+            d.open();
+          } catch(e) { console.error(e); }
+        }
         async function createTask(payload){
           const r = await fetch(api + '/tasks', { method:'POST', headers: authHeaders(), body: JSON.stringify(payload)});
           const t = await r.json();
@@ -125,39 +177,106 @@
         }
 
         const app = new sap.m.App();
-        const shell = new sap.f.ShellBar({
-          title: 'Taskcenter (OpenUI5)',
-          homeIcon: 'sap-icon://home',
-          showNotifications: true,
-          notificationsNumber: '{/notificationsCount}',
-          additionalContent: [ new sap.m.Button({ text:'Token', icon:'sap-icon://key', press: openTokenDialog }) ]
-        });
         const notifyDlgModel = new sap.ui.model.json.JSONModel({ items: [] });
         const notifyDlg = new sap.m.Dialog({ title:'Neuigkeiten', contentWidth:'600px', content:[
           new sap.m.List({ items:{ path:'n>/items', template: new sap.m.StandardListItem({ title:'{n>title}', description:'{n>content}', info:'{n>date}' }) } })
         ], endButton: new sap.m.Button({ text:'Schließen', press: ()=> notifyDlg.close() }) });
         notifyDlg.setModel(notifyDlgModel, 'n');
-        shell.attachNotificationsPressed(()=>{
+        function openNotify(){
           const items = (model.getProperty('/updates')||[]).slice(0,10);
           notifyDlgModel.setProperty('/items', items);
           model.setProperty('/notificationsCount', 0);
           notifyDlg.open();
+        }
+        function toggleTheme(){
+          try{
+            const cur = sap.ui.getCore().getConfiguration().getTheme();
+            const next = cur && cur.toLowerCase().includes('dark') ? 'sap_horizon' : 'sap_horizon_dark';
+            sap.ui.getCore().applyTheme(next);
+            sap.m.MessageToast.show('Theme: ' + next);
+          }catch(e){ console.error(e); }
+        }
+        function openAdminDialog(){
+          const s = Object.assign({ theme: (adminSettings.theme||''), role: model.getProperty('/role')||'lead', pageSize: model.getProperty('/tasksPageSize')||10, compact: document.body.classList.contains('sapUiSizeCompact'), notifyMs: adminSettings.notifyMs || 60000 }, adminSettings);
+          const themeSel = new sap.m.Select({ selectedKey: s.theme||'', items:[
+            new sap.ui.core.Item({ key:'', text:'Standard' }),
+            new sap.ui.core.Item({ key:'sap_horizon', text:'Hell (Horizon)' }),
+            new sap.ui.core.Item({ key:'sap_horizon_dark', text:'Dunkel (Horizon)' })
+          ]});
+          const roleSel = new sap.m.Select({ selectedKey: s.role, items:[ new sap.ui.core.Item({ key:'lead', text:'Leitung' }), new sap.ui.core.Item({ key:'staff', text:'Mitarbeiter' }) ]});
+          const sizeSel = new sap.m.Select({ selectedKey: String(s.pageSize), items:[ new sap.ui.core.Item({ key:'5', text:'5' }), new sap.ui.core.Item({ key:'10', text:'10' }), new sap.ui.core.Item({ key:'20', text:'20' }), new sap.ui.core.Item({ key:'50', text:'50' }) ]});
+          const compactChk = new sap.m.CheckBox({ selected: !!s.compact, text:'Kompakte Dichte (sapUiSizeCompact)' });
+          const notifSel = new sap.m.Select({ selectedKey: String(s.notifyMs||60000), items:[ new sap.ui.core.Item({ key:'30000', text:'30 Sek.' }), new sap.ui.core.Item({ key:'60000', text:'60 Sek.' }), new sap.ui.core.Item({ key:'120000', text:'120 Sek.' }) ]});
+          const form = new sap.ui.layout.form.SimpleForm({ editable:true, layout:'ResponsiveGridLayout', labelSpanL:3, content:[
+            new sap.m.Label({ text:'Theme' }), themeSel,
+            new sap.m.Label({ text:'Rolle' }), roleSel,
+            new sap.m.Label({ text:'Default Seitegröße' }), sizeSel,
+            new sap.m.Label({ text:'Anzeige' }), compactChk,
+            new sap.m.Label({ text:'Benachrichtigungen' }), notifSel
+          ]});
+          const d = new sap.m.Dialog({ contentWidth:'520px', customHeader: new sap.m.Bar({ contentLeft:[ new sap.ui.core.Icon({ src:'sap-icon://action-settings' }), new sap.m.Title({ text:'Admin & Einstellungen' }) ] }), content:[ form ], beginButton: new sap.m.Button({ text:'Speichern', type:'Emphasized', press: ()=>{
+            const newTheme = themeSel.getSelectedKey(); if (newTheme) { try{ sap.ui.getCore().applyTheme(newTheme); }catch(_){}}
+            model.setProperty('/role', roleSel.getSelectedKey());
+            model.setProperty('/tasksPageSize', Number(sizeSel.getSelectedKey()));
+            if (compactChk.getSelected()){ document.body.classList.add('sapUiSizeCompact'); } else { document.body.classList.remove('sapUiSizeCompact'); }
+            const nm = Number(notifSel.getSelectedKey()); startNotifyInterval(nm);
+            adminSettings = { theme:newTheme, notifyMs:nm };
+            try{ localStorage.setItem('admin_settings', JSON.stringify(adminSettings)); }catch(_){}
+            d.close();
+          } }), endButton: new sap.m.Button({ text:'Abbrechen', press: ()=> d.close() }) });
+          d.open();
+        }
+        const headerBar = new sap.m.Bar({
+          contentLeft: [ new sap.m.Title({ text:'Taskcenter (OpenUI5)' }) ],
+          contentRight: [
+            new sap.m.Button({ icon:'sap-icon://bell', tooltip:'Neuigkeiten', press: openNotify }),
+            new sap.m.Button({ icon:'sap-icon://palette', tooltip:'Theme wechseln', press: toggleTheme }),
+            new sap.m.Button({ icon:'sap-icon://action-settings', tooltip:'Admin & Einstellungen', press: openAdminDialog }),
+            new sap.m.Button({ text:'Token', icon:'sap-icon://key', press: openTokenDialog })
+          ]
         });
-        const page = new sap.m.Page({ customHeader: new sap.m.Bar({ contentMiddle:[ new sap.m.Title({ text:'Taskcenter (OpenUI5)' }) ] }) });
+        const page = new sap.m.Page({ customHeader: headerBar });
 
         // Toolbar
         // Tasks server-side query state
         model.setProperty('/tasksPage', 1);
         model.setProperty('/tasksPageSize', 10);
         model.setProperty('/tasksTotal', 0);
+        model.setProperty('/tagsFilter', '');
+        model.setProperty('/countOffen', 0);
+        model.setProperty('/countInArbeit', 0);
+        model.setProperty('/countAbgeschlossen', 0);
+        model.setProperty('/countOverdue', 0);
+        // restore saved view
+        try{
+          const saved = JSON.parse(localStorage.getItem('tasks_view')||'null');
+          if (saved && typeof saved==='object'){
+            ['search','statusFilter','priorityFilter','tagsFilter','sort','tasksPage','tasksPageSize'].forEach(k=>{
+              if (saved[k]!==undefined) model.setProperty('/'+k, saved[k]);
+            });
+          }
+        }catch(_){/* ignore */}
+        function saveView(){
+          const v = {
+            search: model.getProperty('/search')||'',
+            statusFilter: model.getProperty('/statusFilter')||'',
+            priorityFilter: model.getProperty('/priorityFilter')||'',
+            tagsFilter: model.getProperty('/tagsFilter')||'',
+            sort: model.getProperty('/sort')||'created_desc',
+            tasksPage: model.getProperty('/tasksPage')||1,
+            tasksPageSize: model.getProperty('/tasksPageSize')||10
+          };
+          try{ localStorage.setItem('tasks_view', JSON.stringify(v)); }catch(_){ }
+        }
         async function loadTasks(){
           const q = encodeURIComponent(model.getProperty('/search')||'');
           const status = encodeURIComponent(model.getProperty('/statusFilter')||'');
           const prio = encodeURIComponent(model.getProperty('/priorityFilter')||'');
           const sort = encodeURIComponent(model.getProperty('/sort')||'created_desc');
+          const tags = encodeURIComponent(model.getProperty('/tagsFilter')||'');
           const page = Number(model.getProperty('/tasksPage')||1);
           const pageSize = Number(model.getProperty('/tasksPageSize')||10);
-          const url = `${api}/tasks?page=${page}&pageSize=${pageSize}` + (q?`&q=${q}`:'') + (status?`&status=${status}`:'') + (prio?`&priority=${prio}`:'') + (sort?`&sort=${sort}`:'');
+          const url = `${api}/tasks?page=${page}&pageSize=${pageSize}` + (q?`&q=${q}`:'') + (status?`&status=${status}`:'') + (prio?`&priority=${prio}`:'') + (tags?`&tags=${tags}`:'') + (sort?`&sort=${sort}`:'');
           try {
             list.setBusy(true);
             const resp = await fetch(url);
@@ -165,45 +284,116 @@
             const items = json.items || [];
             model.setProperty('/tasks', items);
             model.setProperty('/tasksTotal', json.total || items.length);
+            model.setProperty('/tasksCount', items.length);
+            model.setProperty('/tasksLabel', 'Aufgaben: ' + model.getProperty('/tasksCount') + (model.getProperty('/tasksTotal') ? (' / ' + model.getProperty('/tasksTotal')) : ''));
+            // page-level stats
+            let offen=0, inArb=0, abg=0, over=0; const now=Date.now();
+            items.forEach(t=>{ if (t.status==='offen') offen++; else if (t.status==='in_arbeit') inArb++; else if (t.status==='abgeschlossen') abg++; const d=t.dueAt? Date.parse(t.dueAt):0; if (d && d<now && t.status!=='abgeschlossen') over++; });
+            model.setProperty('/countOffen', offen);
+            model.setProperty('/countInArbeit', inArb);
+            model.setProperty('/countAbgeschlossen', abg);
+            model.setProperty('/countOverdue', over);
           } finally { list.setBusy(false); }
+          saveView();
         }
-        const search = new sap.m.SearchField({ width: '100%', liveChange: async e=>{ model.setProperty('/search', e.getSource().getValue()); model.setProperty('/tasksPage', 1); await loadTasks(); } });
-        const sortSelect = new sap.m.Select({ width:'12rem', selectedKey:'{/sort}', change: async e=>{ model.setProperty('/sort', e.getSource().getSelectedKey()); model.setProperty('/tasksPage', 1); await loadTasks(); }, items:[
+        const search = new sap.m.SearchField({ width: '100%', liveChange: async e=>{ model.setProperty('/search', e.getSource().getValue()); model.setProperty('/tasksPage', 1); updateFilterSummary(); await loadTasks(); } });
+        const sortSelect = new sap.m.Select({ width:'12rem', selectedKey:'{/sort}', change: async e=>{ model.setProperty('/sort', e.getSource().getSelectedKey()); model.setProperty('/tasksPage', 1); updateFilterSummary(); await loadTasks(); }, items:[
           new sap.ui.core.Item({ key:'created_desc', text:'Neueste zuerst' }),
           new sap.ui.core.Item({ key:'created_asc', text:'Älteste zuerst' }),
           new sap.ui.core.Item({ key:'priority_desc', text:'Prio hoch → niedrig' }),
           new sap.ui.core.Item({ key:'priority_asc', text:'Prio niedrig → hoch' })
         ]});
-        const statusSel = new sap.m.Select({ width:'10rem', change: async e=>{ model.setProperty('/statusFilter', e.getSource().getSelectedKey()); model.setProperty('/tasksPage', 1); await loadTasks(); }, items:[
+        const statusSel = new sap.m.Select({ width:'10rem', change: async e=>{ model.setProperty('/statusFilter', e.getSource().getSelectedKey()); model.setProperty('/tasksPage', 1); updateFilterSummary(); await loadTasks(); }, items:[
           new sap.ui.core.Item({ key:'', text:'Status: Alle' }),
           new sap.ui.core.Item({ key:'offen', text:'Offen' }),
           new sap.ui.core.Item({ key:'in_arbeit', text:'In Arbeit' }),
           new sap.ui.core.Item({ key:'abgeschlossen', text:'Abgeschlossen' })
         ]});
-        const prioSel = new sap.m.Select({ width:'10rem', change: async e=>{ model.setProperty('/priorityFilter', e.getSource().getSelectedKey()); model.setProperty('/tasksPage', 1); await loadTasks(); }, items:[
+        const prioSel = new sap.m.Select({ width:'10rem', change: async e=>{ model.setProperty('/priorityFilter', e.getSource().getSelectedKey()); model.setProperty('/tasksPage', 1); updateFilterSummary(); await loadTasks(); }, items:[
           new sap.ui.core.Item({ key:'', text:'Prio: Alle' }),
           new sap.ui.core.Item({ key:'hoch', text:'Hoch' }),
           new sap.ui.core.Item({ key:'mittel', text:'Mittel' }),
           new sap.ui.core.Item({ key:'niedrig', text:'Niedrig' })
         ]});
-        const roleBtn = new sap.m.Button({ text: '{= ${/role} === "lead" ? "Rolle: Leitung" : "Rolle: Mitarbeiter" }', press: ()=>{
+        const roleBtn = new sap.m.Button({ text: { path:'/role', formatter: function(r){ return r==='lead'? 'Rolle: Leitung' : 'Rolle: Mitarbeiter'; } }, press: ()=>{
           const r = model.getProperty('/role')==='lead'?'staff':'lead'; model.setProperty('/role', r);
         }});
         const addBtn = new sap.m.Button({ text:'Neue Aufgabe', type:'Emphasized', press: openCreateDialog });
 
         // Bulk action buttons
         const bulkCompleteBtn = new sap.m.Button({ text:'Ausgewählte erledigen', icon:'sap-icon://accept', press: onBulkComplete, enabled:false });
-        const bulkDeleteBtn = new sap.m.Button({ text:'Ausgewählte löschen', icon:'sap-icon://delete', type:'Reject', press: onBulkDelete, enabled:false, visible: '{= ${/role} === "lead" }' });
+        const bulkDeleteBtn = new sap.m.Button({ text:'Ausgewählte löschen', icon:'sap-icon://delete', type:'Reject', press: onBulkDelete, enabled:false });
+        model.attachPropertyChange(function(e){ if (e.getParameter('path')==='/role'){ bulkDeleteBtn.setVisible(model.getProperty('/role')==='lead'); } });
+        bulkDeleteBtn.setVisible(model.getProperty('/role')==='lead');
         const exportBtn = new sap.m.Button({ text:'Export', icon:'sap-icon://export', press: onExport });
         const importUploader = new sap.ui.unified.FileUploader({ icon:'sap-icon://upload', buttonOnly:true, sameFilenameAllowed:true, fileType:['json'], change:onImportChange });
 
+        // Filter summary (updates on filter changes)
+        model.setProperty('/filterSummary', '');
+        // chips bar for active filters
+        chipBar = chipBar || null;
+        function rebuildChips(parts){
+          if (!chipBar) return;
+          const chips = [];
+          function mkChip(label, onClear){ return new sap.m.Button({ text: label, icon:'sap-icon://decline', type:'Transparent', press:onClear }); }
+          const s = model.getProperty('/search'); if (s) chips.push(mkChip('Suche: "'+s+'"', async ()=>{ model.setProperty('/search',''); await loadTasks(); updateFilterSummary(); }));
+          const st = model.getProperty('/statusFilter'); if (st) chips.push(mkChip('Status: '+(st==='offen'?'Offen':st==='in_arbeit'?'In Arbeit':'Abgeschlossen'), async ()=>{ model.setProperty('/statusFilter',''); await loadTasks(); updateFilterSummary(); }));
+          const p = model.getProperty('/priorityFilter'); if (p) chips.push(mkChip('Prio: '+(p.charAt(0).toUpperCase()+p.slice(1)), async ()=>{ model.setProperty('/priorityFilter',''); await loadTasks(); updateFilterSummary(); }));
+          const tg = model.getProperty('/tagsFilter'); if (tg) chips.push(mkChip('Tags: '+tg, async ()=>{ model.setProperty('/tagsFilter',''); await loadTasks(); updateFilterSummary(); }));
+          chipBar.removeAllContent();
+          if (chips.length){ chips.forEach(c=> chipBar.addContent(c)); chipBar.setVisible(true); }
+          else { chipBar.setVisible(false); }
+        }
+        function updateFilterSummary(){
+          const parts = [];
+          const s = model.getProperty('/search'); if (s) parts.push('Suche: "'+s+'"');
+          const st = model.getProperty('/statusFilter'); if (st) parts.push('Status: '+(st==='offen'?'Offen':st==='in_arbeit'?'In Arbeit':'Abgeschlossen'));
+          const p = model.getProperty('/priorityFilter'); if (p) parts.push('Prio: '+(p.charAt(0).toUpperCase()+p.slice(1)));
+          const tg = model.getProperty('/tagsFilter'); if (tg) parts.push('Tags: '+tg);
+          model.setProperty('/filterSummary', parts.join('  •  '));
+          rebuildChips(parts);
+        }
+        const summaryText = new sap.m.Text({ text: '{/tasksLabel}' });
+        const filterText = new sap.m.Text({ text: '{/filterSummary}' });
+        const tagsInput = new sap.m.Input({ width:'16rem', placeholder:'Tags (csv)', value:'{/tagsFilter}', change: async (e)=>{ model.setProperty('/tagsFilter', e.getSource().getValue()); model.setProperty('/tasksPage', 1); updateFilterSummary(); await loadTasks(); } });
+        const resetFiltersBtn = new sap.m.Button({ text:'Zurücksetzen', type:'Transparent', press: async ()=>{
+          model.setProperty('/search','');
+          model.setProperty('/statusFilter','');
+          model.setProperty('/priorityFilter','');
+          model.setProperty('/tagsFilter','');
+          model.setProperty('/sort','created_desc');
+          model.setProperty('/tasksPage',1);
+          updateFilterSummary();
+          await loadTasks();
+        }});
+        const quickStatus = new sap.m.SegmentedButton({ width:'auto', items:[
+          new sap.m.SegmentedButtonItem({ key:'', text:'Alle' }),
+          new sap.m.SegmentedButtonItem({ key:'offen', text:'Offen' }),
+          new sap.m.SegmentedButtonItem({ key:'in_arbeit', text:'In Arbeit' }),
+          new sap.m.SegmentedButtonItem({ key:'abgeschlossen', text:'Abgeschlossen' })
+        ], selectionChange: async (e)=>{ model.setProperty('/statusFilter', e.getParameter('item').getKey()); model.setProperty('/tasksPage', 1); updateFilterSummary(); await loadTasks(); }});
+        const prioLegend = new sap.m.Toolbar({ content:[
+          new sap.m.ObjectStatus({ text:'Prio Hoch', state:'Error' }),
+          new sap.m.ToolbarSeparator(),
+          new sap.m.ObjectStatus({ text:'Prio Mittel', state:'Warning' }),
+          new sap.m.ToolbarSeparator(),
+          new sap.m.ObjectStatus({ text:'Prio Niedrig', state:'Success' })
+        ]});
+        if (!chipBar) { chipBar = new sap.m.Toolbar({ visible:false, content:[] }); }
         const toolbar = new sap.m.Toolbar({ content:[
           new sap.m.ToolbarSpacer(),
           search,
           new sap.m.ToolbarSeparator(),
           sortSelect,
           statusSel,
+          quickStatus,
           prioSel,
+          tagsInput,
+          resetFiltersBtn,
+          new sap.m.ToolbarSeparator(),
+          summaryText,
+          new sap.m.Text({ text:'  ' }),
+          filterText,
           new sap.m.ToolbarSpacer(),
           bulkCompleteBtn,
           bulkDeleteBtn,
@@ -216,16 +406,13 @@
 
         // List & binding with formatter and filters
         const list = new sap.m.List({ inset:false, mode:'MultiSelect', growing:true, growingScrollToLoad:true, selectionChange:updateBulkButtons });
-        list.setNoDataText('Keine Aufgaben gefunden');
+        list.setNoDataText('Keine Aufgaben gefunden. Mit "Neue Aufgabe" kannst du starten.');
         const itemTpl = new sap.m.ObjectListItem({
           title: '{title}',
           number: { path: 'dueAt', formatter: fmt.dueText },
           numberState: { path: 'dueAt', formatter: function(d){ return fmt.overdue(d)? 'Error' : 'None'; } },
-          attributes: [
-            new sap.m.ObjectAttribute({ title:'Prio', text:'{priority}' }),
-            new sap.m.ObjectAttribute({ title:'Status', text:'{status}' })
-          ],
-          firstStatus: new sap.m.ObjectStatus({ text:'{priority}', state:'{= ${priority} === "hoch" ? "Error" : (${priority} === "mittel" ? "Warning" : "Success") }' }),
+          firstStatus: new sap.m.ObjectStatus({ text: '{priority}', state: { path:'priority', formatter: fmt.prioState } }),
+          secondStatus: new sap.m.ObjectStatus({ text: { path:'status', formatter: fmt.statusText }, state: { path:'status', formatter: fmt.statusState } }),
           type: 'Active'
         });
         list.bindItems({ path:'/tasks', template: itemTpl });
@@ -281,8 +468,9 @@
         // Dialogs
         let dlg;
         function buildTaskForm(data){
-          const title = new sap.m.Input({ value: data.title || '' });
-          const desc = new sap.m.TextArea({ value: data.description || '', rows:4 });
+          const title = new sap.m.Input({ value: data.title || '', placeholder:'Titel eingeben', liveChange:(e)=>{ const v=e.getSource().getValue(); e.getSource().setValueState(v? 'None':'Error'); } });
+          title.setValueState(title.getValue()? 'None':'Error');
+          const desc = new sap.m.TextArea({ value: data.description || '', rows:4, placeholder:'Beschreibung' });
           const prio = new sap.m.Select({ selectedKey: data.priority || 'mittel', items:[
             new sap.ui.core.Item({ key:'hoch', text:'Hoch' }),
             new sap.ui.core.Item({ key:'mittel', text:'Mittel' }),
@@ -294,55 +482,72 @@
             new sap.ui.core.Item({ key:'abgeschlossen', text:'Abgeschlossen' })
           ]});
           const due = new sap.m.DateTimePicker({ value: data.dueAt || '', displayFormat:'dd.MM.yyyy, HH:mm', valueFormat:'yyyy-MM-ddTHH:mm' });
-          return { title, desc, prio, status, due };
+          const tagsInput = new sap.m.Input({ value: (Array.isArray(data.tags)? data.tags.join(', '): (data.tags||'')), placeholder:'Tags (kommagetrennt)' });
+          return { title, desc, prio, status, due, tagsInput };
+        }
+        const TEMPLATES = [
+          { key:'', text:'Vorlage wählen' },
+          { key:'hygiene', text:'Hygiene-Check', data:{ title:'Hygiene-Check durchführen', description:'Tägliche Reinigung und Checkliste abarbeiten', priority:'hoch', status:'offen', tags:'Hygiene,Frische', dueAt:'' } },
+          { key:'inventur', text:'Inventur Spotcheck', data:{ title:'Inventur-Spotcheck Lagergang C', description:'Stichprobe Zählung durchführen und Abweichungen protokollieren', priority:'mittel', status:'offen', tags:'Inventur,Lager', dueAt:'' } },
+          { key:'mhd', text:'MHD-Kontrolle', data:{ title:'MHD-Kontrolle Kühlregal', description:'Ablaufende Ware aussortieren und reduzieren', priority:'hoch', status:'in_arbeit', tags:'Hygiene,Frische', dueAt:'' } }
+        ];
+        function applyTemplateToForm(tplKey, formRefs){
+          const tpl = TEMPLATES.find(t=>t.key===tplKey);
+          if (!tpl || !tpl.data) return;
+          const d = tpl.data;
+          formRefs.title.setValue(d.title||'');
+          formRefs.desc.setValue(d.description||'');
+          formRefs.prio.setSelectedKey(d.priority||'mittel');
+          formRefs.status.setSelectedKey(d.status||'offen');
+          formRefs.due.setValue(d.dueAt||'');
+          formRefs.tagsInput.setValue(d.tags||'');
         }
         function openCreateDialog(){
           const f = buildTaskForm({});
-          dlg = new sap.m.Dialog({ title:'Neue Aufgabe', contentWidth:'500px', content:[
+          const templateSel = new sap.m.Select({ width:'100%', items: TEMPLATES.map(t=> new sap.ui.core.Item({ key:t.key, text:t.text })), change:(e)=>{ applyTemplateToForm(e.getSource().getSelectedKey(), f); } });
+          const form = new sap.ui.layout.form.SimpleForm({ editable:true, layout:'ResponsiveGridLayout', labelSpanXL:3, labelSpanL:3, labelSpanM:4, adjustLabelSpan:false, content:[
+            new sap.m.Label({text:'Vorlage'}), templateSel,
             new sap.m.Label({text:'Titel'}), f.title,
             new sap.m.Label({text:'Beschreibung'}), f.desc,
             new sap.m.Label({text:'Priorität'}), f.prio,
             new sap.m.Label({text:'Status'}), f.status,
-            new sap.m.Label({text:'Fällig bis'}), f.due
-          ], beginButton: new sap.m.Button({ text:'Speichern', type:'Emphasized', press: async ()=>{
-            await createTask({ title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue() });
+            new sap.m.Label({text:'Fällig bis'}), f.due,
+            new sap.m.Label({text:'Tags'}), f.tagsInput
+          ]});
+          dlg = new sap.m.Dialog({ contentWidth:'640px', contentHeight:'auto', stretchOnPhone:true, content:[ form ],
+            customHeader: new sap.m.Bar({ contentLeft:[ new sap.ui.core.Icon({ src:'sap-icon://add', color:'AccentColor1' }), new sap.m.Title({ text:'Neue Aufgabe' }) ], contentRight:[ new sap.m.Button({ icon:'sap-icon://decline', tooltip:'Schließen', press: ()=>dlg.close() }) ] }),
+            beginButton: new sap.m.Button({ text:'Speichern', type:'Emphasized', press: async ()=>{
+            if (!f.title.getValue()){ f.title.setValueState('Error'); return; }
+            await createTask({ title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue(), tags: f.tagsInput.getValue() });
             dlg.close(); dlg.destroy();
           }}), endButton: new sap.m.Button({ text:'Abbrechen', press: ()=>{ dlg.close(); dlg.destroy(); } }) });
           dlg.open();
-        }
-        async function fetchComments(taskId){
-          try{ const r = await fetch(api + '/tasks/' + taskId + '/comments'); return await r.json(); } catch(_){ return []; }
-        }
-        async function postComment(taskId, text){
-          const r = await fetch(api + '/tasks/' + taskId + '/comments', { method:'POST', headers: authHeaders(), body: JSON.stringify({ text, author: model.getProperty('/role') }) });
-          return await r.json();
-        }
-        function openTokenDialog(){
-          let input = new sap.m.Input({ value: authToken, placeholder:'demo-token' });
-          let d = new sap.m.Dialog({ title:'Auth Token', content:[ input ], beginButton: new sap.m.Button({ text:'Speichern', type:'Emphasized', press: ()=>{ authToken = input.getValue(); localStorage.setItem('demo_token', authToken); d.close(); sap.m.MessageToast.show('Token gespeichert'); } }), endButton: new sap.m.Button({ text:'Abbrechen', press: ()=> d.close() }) });
-          d.open();
         }
         async function openEditDialog(task){
           const f = buildTaskForm(task);
           const canDelete = model.getProperty('/role')==='lead';
           const cModel = new sap.ui.model.json.JSONModel({ items: await fetchComments(task.id), text:'' });
           const commentList = new sap.m.List({ headerText:'Kommentare' });
-          commentList.bindItems({ path:'c>/items', template: new sap.m.FeedListItem({ text:'{c>text}', sender:'{c>author}', info:'{c>createdAt}' }) });
-          const addBar = new sap.m.Bar({ contentMiddle:[ new sap.m.Input({ width:'100%', placeholder:'Kommentar...', value:'{c>/text}' }) ], contentRight:[ new sap.m.Button({ text:'Senden', icon:'sap-icon://send', press: async ()=>{ const text = cModel.getProperty('/text'); if(!text) return; const c= await postComment(task.id, text); const arr=cModel.getProperty('/items'); arr.push(c); cModel.setProperty('/items', arr); cModel.setProperty('/text',''); } }) ] });
+          commentList.bindItems({ path:'c>/items', template: new sap.m.FeedListItem({ text:'{c>text}', sender:'{c>author}', icon:{ path:'c>author', formatter:function(a){ return a&&a.toLowerCase().includes('leitung')? 'sap-icon://manager' : 'sap-icon://employee'; } }, info:{ path:'c>createdAt', formatter: fmt.relative } }) });
+          const feed = new sap.m.FeedInput({ placeholder:'Kommentar hinzufügen...', post: async (e)=>{ const text = e.getParameter('text'); if(!text) return; const c = await postComment(task.id, text); const arr=cModel.getProperty('/items'); arr.push(c); cModel.setProperty('/items', arr); } });
           const footer = new sap.m.HBox({ justifyContent:'SpaceBetween', width:'100%', items:[
             new sap.m.Button({ text:'Löschen', type:'Reject', visible: canDelete, press: async ()=>{ await deleteTask(task.id); dlg.close(); dlg.destroy(); } }),
-            new sap.m.Button({ text:'Speichern', type:'Emphasized', press: async ()=>{ await updateTask(task.id, { title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue() }); dlg.close(); dlg.destroy(); } })
+            new sap.m.Button({ text:'Speichern', type:'Emphasized', press: async ()=>{ if (!f.title.getValue()){ f.title.setValueState('Error'); return; } await updateTask(task.id, { title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue(), tags: f.tagsInput.getValue() }); dlg.close(); dlg.destroy(); } })
           ]});
-          dlg = new sap.m.Dialog({ title:'Aufgabe bearbeiten', contentWidth:'600px', content:[
+          const form = new sap.ui.layout.form.SimpleForm({ editable:true, layout:'ResponsiveGridLayout', labelSpanXL:3, labelSpanL:3, labelSpanM:4, adjustLabelSpan:false, content:[
             new sap.m.Label({text:'Titel'}), f.title,
             new sap.m.Label({text:'Beschreibung'}), f.desc,
             new sap.m.Label({text:'Priorität'}), f.prio,
             new sap.m.Label({text:'Status'}), f.status,
             new sap.m.Label({text:'Fällig bis'}), f.due,
+            new sap.m.Label({text:'Tags'}), f.tagsInput
+          ]});
+          dlg = new sap.m.Dialog({ contentWidth:'720px', contentHeight:'auto', stretchOnPhone:true, content:[
+            form,
             new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Kommentare' }) ] }),
             commentList,
-            addBar,
-          ], buttons: [], endButton: new sap.m.Button({ text:'Schließen', press: ()=>{ dlg.close(); dlg.destroy(); } }), customHeader: new sap.m.Bar({ contentRight: [] }) });
+            feed,
+          ], buttons: [], endButton: new sap.m.Button({ text:'Schließen', press: ()=>{ dlg.close(); dlg.destroy(); } }), customHeader: new sap.m.Bar({ contentLeft:[ new sap.ui.core.Icon({ src:'sap-icon://edit', color:'AccentColor1' }), new sap.m.Title({ text:'Aufgabe bearbeiten' }) ], contentRight:[ new sap.m.Button({ icon:'sap-icon://decline', tooltip:'Schließen', press: ()=>dlg.close() }) ] }) });
           dlg.setModel(cModel,'c');
           dlg.addContent(new sap.m.Toolbar({ content:[ new sap.m.ToolbarSpacer(), footer ] }));
           dlg.open();
@@ -353,8 +558,9 @@
           const sModelPath = cfg.path;
           const descProp = cfg.desc || 'description';
           const infoProp = cfg.info || '';
-          const state = new sap.ui.model.json.JSONModel({ q:'', sort:'title_asc', page:1, pageSize:10, total:0 });
+          const state = new sap.ui.model.json.JSONModel({ q:'', sort:'title_asc', page:1, pageSize:10, total:0, itemsCount:0, pageLabel:'', infoLabel:'', canPrev:false, canNext:false });
           const dataModel = new sap.ui.model.json.JSONModel({ items:[] });
+          let list;
           async function loadPage(){
             const page = state.getProperty('/page');
             const pageSize = state.getProperty('/pageSize');
@@ -362,87 +568,137 @@
             const sort = encodeURIComponent(state.getProperty('/sort')||'');
             const url = api + sModelPath + `?page=${page}&pageSize=${pageSize}` + (q?`&q=${q}`:'') + (sort?`&sort=${sort}`:'');
             try{
-              list.setBusy(true);
+              if (list) list.setBusy(true);
               const resp = await fetch(url);
               const json = await resp.json();
-              if (json && json.items){ dataModel.setProperty('/items', json.items); state.setProperty('/total', json.total||json.items.length); }
-              else { dataModel.setProperty('/items', json); state.setProperty('/total', Array.isArray(json)?json.length:0); }
-            }catch(_){ /* ignore */ } finally { list.setBusy(false); }
+              if (json && json.items){ dataModel.setProperty('/items', json.items); state.setProperty('/total', json.total||json.items.length); state.setProperty('/itemsCount', (json.items||[]).length); }
+              else { const arr = Array.isArray(json)? json : []; dataModel.setProperty('/items', arr); state.setProperty('/total', arr.length); state.setProperty('/itemsCount', arr.length); }
+            }catch(_){ /* ignore */ } finally { if (list) list.setBusy(false); }
+            const p = state.getProperty('/page');
+            const tot = state.getProperty('/total');
+            const ps = state.getProperty('/pageSize');
+            const pages = Math.max(1, Math.ceil((tot||0)/(ps||1)));
+            state.setProperty('/pageLabel', 'Seite ' + p + ' von ' + pages);
+            state.setProperty('/infoLabel', 'Einträge: ' + state.getProperty('/itemsCount') + (tot? (' / ' + tot):''));
+            state.setProperty('/canPrev', p > 1);
+            state.setProperty('/canNext', p < pages);
           }
           const search = new sap.m.SearchField({ liveChange: async e=>{ state.setProperty('/q', e.getSource().getValue()); state.setProperty('/page', 1); await loadPage(); } });
           const sortSel = new sap.m.Select({ selectedKey:'title_asc', change: async e=>{ state.setProperty('/sort', e.getSource().getSelectedKey()); state.setProperty('/page', 1); await loadPage(); }, items:[
             new sap.ui.core.Item({ key:'title_asc', text:'Titel A→Z' }),
             new sap.ui.core.Item({ key:'title_desc', text:'Titel Z→A' })
           ]});
-          const list = new sap.m.List({ growing:true, growingScrollToLoad:true });
+          list = new sap.m.List({ growing:true, growingScrollToLoad:true });
           list.setNoDataText('Keine Einträge');
-          const tpl = new sap.m.StandardListItem({
-            title: '{title}', description: `{${descProp}}`, info: infoProp?`{${infoProp}}`:'' , type: 'Active'
+          const tpl = new sap.m.ObjectListItem({
+            title: '{title}', number: infoProp?`{${infoProp}}`:'',
+            attributes:[ new sap.m.ObjectAttribute({ text: `{${descProp}}` }) ],
+            firstStatus: new sap.m.ObjectStatus({ text: infoProp?`{${infoProp}}`:'' , state:'Information' }),
+            type: 'Active'
           });
           list.bindItems({ path: '/items', template: tpl });
           list.setModel(dataModel);
           list.attachItemPress((ev)=>{
             const obj = ev.getParameter('listItem').getBindingContext().getObject();
-            const d = new sap.m.Dialog({ title: obj.title, contentWidth:'600px', content:[
-              new sap.m.Text({ text: descProp==='content'? (obj.content||'') : (obj.description||'') }),
-              infoProp? new sap.m.ObjectStatus({ text: `{${infoProp}}` }).bindObject(undefined): new sap.m.Text({ visible:false })
-            ], endButton: new sap.m.Button({ text:'Schließen', press: ()=> d.close() }) });
+            let d;
+            const header = new sap.m.Bar({ contentLeft:[ new sap.m.Title({ text: obj.title }) ], contentRight:[ new sap.m.Button({ icon:'sap-icon://decline', press: ()=> d && d.close() }) ] });
+            const html = (descProp==='content'? (obj.content||'') : (obj.description||'')).replace(/\n/g, '<br>');
+            const body = new sap.m.VBox({ width:'100%', items:[
+              new sap.m.FormattedText({ htmlText: html, sanitizeContent:true }),
+              infoProp && obj && obj[infoProp] != null ? new sap.m.ObjectStatus({ text: String(obj[infoProp]), state:'Information' }) : new sap.m.Text({ visible:false })
+            ]});
+            d = new sap.m.Dialog({ contentWidth:'600px', stretchOnPhone:true, customHeader: header, content: [ body ], endButton: new sap.m.Button({ text:'Schließen', press: ()=> d.close() }) });
             d.open();
           });
           const pageSizeSel = new sap.m.Select({ width:'8rem', selectedKey:'{state>/pageSize}', change: async (e)=>{ state.setProperty('/pageSize', Number(e.getSource().getSelectedKey())); state.setProperty('/page', 1); await loadPage(); }, items:[
-            new sap.ui.core.Item({ key:'5', text:'5 / Seite' }),
-            new sap.ui.core.Item({ key:'10', text:'10 / Seite' }),
-            new sap.ui.core.Item({ key:'20', text:'20 / Seite' })
-          ]});
+          new sap.ui.core.Item({ key:'5', text:'5 / Seite' }),
+          new sap.ui.core.Item({ key:'10', text:'10 / Seite' }),
+          new sap.ui.core.Item({ key:'20', text:'20 / Seite' })
+        ]});
+          const infoBar = new sap.m.Toolbar({ content:[ new sap.m.ObjectStatus({ text:'{state>/infoLabel}', state:'None' }) ]});
           const pager = new sap.m.Toolbar({ content:[
-            new sap.m.Button({ text:'Zurück', enabled: '{= ${state>/page} > 1 }', press: async ()=>{ const p = state.getProperty('/page')-1; state.setProperty('/page', p); await loadPage(); } }),
-            new sap.m.Text({ text: '{= "Seite " + ${state>/page} + " von " + Math.max(1, Math.ceil(${state>/total} / ${state>/pageSize})) }' }),
-            new sap.m.Button({ text:'Weiter', enabled:'{= ${state>/page} < Math.ceil(${state>/total} / ${state>/pageSize}) }', press: async ()=>{ const p = state.getProperty('/page')+1; state.setProperty('/page', p); await loadPage(); } }),
+            new sap.m.Button({ text:'Zurück', enabled: '{state>/canPrev}', press: async ()=>{ const p = state.getProperty('/page')-1; state.setProperty('/page', p); await loadPage(); } }),
+            new sap.m.Text({ text: '{state>/pageLabel}' }),
+            new sap.m.Button({ text:'Weiter', enabled:'{state>/canNext}', press: async ()=>{ const p = state.getProperty('/page')+1; state.setProperty('/page', p); await loadPage(); } }),
+            new sap.m.Button({ text:'Reset', press: async ()=>{ state.setProperty('/q', ''); state.setProperty('/sort', 'title_asc'); state.setProperty('/page', 1); state.setProperty('/pageSize', 10); await loadPage(); } }),
             new sap.m.ToolbarSpacer(),
             pageSizeSel
           ]});
-          const vbox = new sap.m.VBox({ width:'100%', items:[ new sap.m.Toolbar({ content:[ search, new sap.m.ToolbarSpacer(), sortSel ] }), list, pager ] });
+          list.setNoDataText('Keine Einträge gefunden.');
+          const vbox = new sap.m.VBox({ width:'100%', items:[ new sap.m.Toolbar({ content:[ search, new sap.m.ToolbarSpacer(), sortSel ] }), infoBar, list, pager ] });
           vbox.setModel(state, 'state');
           // initial load
           setTimeout(loadPage, 0);
           return vbox;
         }
 
-        // Board Tab (3 Spalten, Buttons zum Verschieben)
+        // Board Tab (3 Spalten, Karten mit Chips)
         function makeBoard(){
+          function statusNext(s){ if (s==='offen') return 'in_arbeit'; if (s==='in_arbeit') return 'abgeschlossen'; return 'abgeschlossen'; }
+          function statusPrev(s){ if (s==='abgeschlossen') return 'in_arbeit'; if (s==='in_arbeit') return 'offen'; return 'offen'; }
+          function cardTemplate(){
+            const title = new sap.m.Title({ text:'{title}', level:'H5' });
+            const prioChip = new sap.m.ObjectStatus({ text:'{priority}', state:{ path:'priority', formatter: fmt.prioState } });
+            const statusChip = new sap.m.ObjectStatus({ text:{ path:'status', formatter: fmt.statusText }, state:{ path:'status', formatter: fmt.statusState } });
+            const qaPrev = new sap.m.Button({ icon:'sap-icon://arrow-left', tooltip:'Status zurück', type:'Transparent', press: async (e)=>{
+              const ctx = e.getSource().getBindingContext(); const o = ctx.getObject(); await updateTask(o.id, { status: statusPrev(o.status) });
+            }});
+            const qaNext = new sap.m.Button({ icon:'sap-icon://arrow-right', tooltip:'Status vor', type:'Transparent', press: async (e)=>{
+              const ctx = e.getSource().getBindingContext(); const o = ctx.getObject(); await updateTask(o.id, { status: statusNext(o.status) });
+            }});
+            const qaDone = new sap.m.Button({ icon:'sap-icon://accept', tooltip:'Erledigen', type:'Accept', press: async (e)=>{
+              const ctx = e.getSource().getBindingContext(); const o = ctx.getObject(); await updateTask(o.id, { status: 'abgeschlossen' });
+            }});
+            const actions = new sap.m.HBox({ items:[ qaPrev, qaNext, qaDone ] }).addStyleClass('sapUiTinyMarginBegin');
+            const top = new sap.m.HBox({ justifyContent:'SpaceBetween', alignItems:'Center', items:[ title, new sap.m.HBox({ items:[ prioChip, new sap.m.Text({ text:'  ' }), statusChip, actions ] }) ] });
+            const desc = new sap.m.Text({ text:'{description}', maxLines:3, wrapping:true });
+            const tags = new sap.m.ObjectAttribute({ text: { path:'tags', formatter: function(v){
+              if (Array.isArray(v)) return 'Tags: ' + v.join(', ');
+              return v ? ('Tags: ' + v) : '';
+            } } });
+            const due = new sap.m.ObjectStatus({ text:{ path:'dueAt', formatter: fmt.dueText }, state:{ path:'dueAt', formatter: function(d){ return fmt.overdue(d)? 'Error':'None'; } } });
+            const box = new sap.m.VBox({ width:'100%', items:[ top, new sap.m.ObjectStatus({ text:'' }), desc, tags, due ] }).addStyleClass('kanban-card__inner');
+            const item = new sap.m.CustomListItem({ content:[ box ] });
+            item.addStyleClass('kanban-card');
+            return item;
+          }
           function column(title, status){
-            const l = new sap.m.List({ headerText: title, mode:'None' });
-            const tpl = new sap.m.CustomListItem({ content:[
-              new sap.m.HBox({ width:'100%', justifyContent:'SpaceBetween', alignItems:'Center', items:[
-                new sap.m.VBox({ items:[
-                  new sap.m.Text({ text:'{title}' }),
-                  new sap.m.ObjectStatus({ text:'{priority}', state:'{= ${priority} === "hoch" ? "Error" : (${priority} === "mittel" ? "Warning" : "Success") }' })
-                ]}),
-                new sap.m.HBox({ items:[
-                  new sap.m.Button({ text:'→ Offen', visible: '{= ${status}!=="offen" }', press: (e)=> moveStatus(e, 'offen') }),
-                  new sap.m.Button({ text:'→ In Arbeit', visible: '{= ${status}!=="in_arbeit" }', press: (e)=> moveStatus(e, 'in_arbeit') }),
-                  new sap.m.Button({ text:'→ Abgeschlossen', visible: '{= ${status}!=="abgeschlossen" }', press: (e)=> moveStatus(e, 'abgeschlossen') })
-                ]})
-              ]})
-            ]});
-            l.bindItems({ path:'/tasks', template: tpl, filters:[ new sap.ui.model.Filter('status', sap.ui.model.FilterOperator.EQ, status) ] });
-            // Drag & Drop
-            l.addDragDropConfig(new sap.ui.core.dnd.DragInfo({ sourceAggregation:'items' }));
-            l.addDragDropConfig(new sap.ui.core.dnd.DropInfo({ targetAggregation:'items', drop: async (oEvent)=>{
+            const statusKey = status;
+            const countObj = new sap.m.ObjectNumber({ number:{
+              parts:['/tasks'],
+              formatter: function(tasks){ try{ return (tasks||[]).filter(t=>t.status===statusKey).length; }catch(_){ return 0; } }
+            }, emphasized:true });
+            const l = new sap.m.List({ mode:'None', inset:false, headerToolbar: new sap.m.Toolbar({ content:[ new sap.m.Title({ text:title }), new sap.m.ToolbarSpacer(), countObj ] }) });
+            l.addStyleClass('board-column');
+            l.setNoDataText('Keine Aufgaben');
+            l.bindItems({ path:'/tasks',
+              filters:[ new sap.ui.model.Filter('status', sap.ui.model.FilterOperator.EQ, status) ],
+              template: cardTemplate()
+            });
+            // Drag & Drop group and visuals
+            l.addDragDropConfig(new sap.ui.core.dnd.DragInfo({ group:'tasks', sourceAggregation:'items' }));
+            l.addDragDropConfig(new sap.ui.core.dnd.DropInfo({ group:'tasks', targetAggregation:'items',
+              dragEnter: function(){ l.addStyleClass('drop-hover'); },
+              dragLeave: function(){ l.removeStyleClass('drop-hover'); },
+              drop: async (oEvent)=>{
               const dragged = oEvent.getParameter('draggedControl');
               const ctx = dragged && dragged.getBindingContext();
               if (!ctx) return;
               const t = ctx.getObject();
               const newStatus = status;
-              if (t.status !== newStatus){ await updateTask(t.id, { status: newStatus }); sap.m.MessageToast.show('Per Drag&Drop verschoben'); }
+              if (t.status !== newStatus){ await updateTask(t.id, { status: newStatus }); sap.m.MessageToast.show('Verschoben: '+(t.title||'')); }
+              l.removeStyleClass('drop-hover');
             }}));
+            l.attachItemPress((ev)=>{ const t = ev.getParameter('listItem').getBindingContext().getObject(); openEditDialog(t); });
             return l;
           }
-          return new sap.m.HBox({ width:'100%', alignItems:'Start', items:[
-            new sap.m.VBox({ width:'33%', items:[ column('Offen', 'offen') ]}),
-            new sap.m.VBox({ width:'33%', items:[ column('In Arbeit', 'in_arbeit') ]}),
-            new sap.m.VBox({ width:'33%', items:[ column('Abgeschlossen', 'abgeschlossen') ]}),
+          const box = new sap.m.FlexBox({ alignItems:'Start', fitContainer:true, items:[
+            new sap.m.VBox({ width:'33%', items:[ column('Offen','offen') ] }).addStyleClass('kanban-col'),
+            new sap.m.VBox({ width:'34%', items:[ column('In Arbeit','in_arbeit') ] }).addStyleClass('kanban-col'),
+            new sap.m.VBox({ width:'33%', items:[ column('Abgeschlossen','abgeschlossen') ] }).addStyleClass('kanban-col')
           ]});
+          box.addStyleClass('kanban');
+          return box;
         }
 
         // Kalender Tab (Datum auswählen, Items anzeigen)
@@ -473,21 +729,49 @@
           return vbox;
         }
 
+        // KPI Bar (grafisch) und Stats Bar (page-level)
+        const kpiBar = new sap.m.Toolbar({ content:[
+          new sap.m.ObjectNumber({ number:'{/tasksTotal}', unit:'gesamt', emphasized:true }),
+          new sap.m.ToolbarSeparator(),
+          new sap.m.ObjectNumber({ number:'{/countOffen}', unit:'offen', emphasized:false }),
+          new sap.m.ToolbarSeparator(),
+          new sap.m.ObjectNumber({ number:'{/countInArbeit}', unit:'in Arbeit', emphasized:false }),
+          new sap.m.ToolbarSeparator(),
+          new sap.m.ObjectNumber({ number:'{/countOverdue}', unit:'überfällig', emphasized:true, state:'Error' })
+        ]});
+        const statsBar = new sap.m.Toolbar({ content:[
+          new sap.m.ObjectStatus({ text:'Offen: {/countOffen}', state:'None' }),
+          new sap.m.ToolbarSeparator(),
+          new sap.m.ObjectStatus({ text:'In Arbeit: {/countInArbeit}', state:'Information' }),
+          new sap.m.ToolbarSeparator(),
+          new sap.m.ObjectStatus({ text:'Abgeschlossen: {/countAbgeschlossen}', state:'Success' }),
+          new sap.m.ToolbarSeparator(),
+          new sap.m.ObjectStatus({ text:'Überfällig: {/countOverdue}', state:'Error' })
+        ]});
+
         // Tabs Container
         const tabs = new sap.m.IconTabBar({ expandable:false, items:[
-          new sap.m.IconTabFilter({ key:'tasks', text:'Aufgaben', count: '{= ${/tasks}.length }', icon:'sap-icon://task', content:[ toolbar, new sap.m.ObjectStatus({ text:'Überfällige Aufgaben werden rot markiert.', state:'None' }), list ] }),
-          new sap.m.IconTabFilter({ key:'updates', text:'Updates', count: '{= ${/updates}.length }', icon:'sap-icon://message-information', content:[ makeSimpleTab({ path:'/updates', title:'Updates', desc:'content', info:'date' }) ] }),
-          new sap.m.IconTabFilter({ key:'guides', text:'Anleitungen', count: '{= ${/guides}.length }', icon:'sap-icon://hint', content:[ makeSimpleTab({ path:'/guides', title:'Anleitungen', desc:'description' }) ] }),
-          new sap.m.IconTabFilter({ key:'events', text:'Aktionstage', count: '{= ${/events}.length }', icon:'sap-icon://calendar', content:[ makeSimpleTab({ path:'/events', title:'Aktionstage', desc:'description', info:'date' }) ] }),
+          new sap.m.IconTabFilter({ key:'tasks', text:'Aufgaben', count: '{/tasksCount}', icon:'sap-icon://task', content:[ toolbar, chipBar, kpiBar, prioLegend, statsBar, new sap.m.ObjectStatus({ text:'Überfällige Aufgaben werden rot markiert.', state:'None' }), list ] }),
+          new sap.m.IconTabFilter({ key:'updates', text:'Updates', count: '{/updatesCount}', icon:'sap-icon://message-information', content:[ makeSimpleTab({ path:'/updates', title:'Updates', desc:'content', info:'date' }) ] }),
+          new sap.m.IconTabFilter({ key:'guides', text:'Anleitungen', count: '{/guidesCount}', icon:'sap-icon://hint', content:[ makeSimpleTab({ path:'/guides', title:'Anleitungen', desc:'description' }) ] }),
+          new sap.m.IconTabFilter({ key:'events', text:'Aktionstage', count: '{/eventsCount}', icon:'sap-icon://calendar', content:[ makeSimpleTab({ path:'/events', title:'Aktionstage', desc:'description', info:'date' }) ] }),
           new sap.m.IconTabFilter({ key:'board', text:'Board', icon:'sap-icon://kanban', content:[ makeBoard() ] }),
           new sap.m.IconTabFilter({ key:'calendar', text:'Kalender', icon:'sap-icon://appointment-2', content:[ makeCalendar() ] })
         ]});
 
-        // Assemble page
+        // Apply admin settings after UI build
+        (function applyAdmin(){
+          if (adminSettings && adminSettings.theme){ try{ sap.ui.getCore().applyTheme(adminSettings.theme); }catch(_){} }
+          if (adminSettings && adminSettings.notifyMs){ startNotifyInterval(adminSettings.notifyMs); } else { startNotifyInterval(60000); }
+          if (document.body && !document.body.classList.contains('sapUiSizeCompact')){ /* leave as-is; admin can toggle */ }
+        })();
+
+        // Assemble page (use sap.m.Bar header to ensure compatibility)
         page.addContent(tabs);
-        app.addPage(new sap.m.Page({ customHeader: shell, content:[ page ] }));
+        app.addPage(page);
 
         // Bind model
+        app.setModel(model);
         page.setModel(model);
         list.setModel(model);
 
