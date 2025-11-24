@@ -718,8 +718,8 @@
               template: cardTemplate()
             });
             // Drag & Drop group and visuals
-            l.addDragDropConfig(new sap.ui.core.dnd.DragInfo({ group:'tasks', sourceAggregation:'items' }));
-            l.addDragDropConfig(new sap.ui.core.dnd.DropInfo({ group:'tasks', targetAggregation:'items',
+            l.addDragDropConfig(new sap.ui.core.dnd.DragInfo({ groupName:'tasks', sourceAggregation:'items' }));
+            l.addDragDropConfig(new sap.ui.core.dnd.DropInfo({ groupName:'tasks', targetAggregation:'items',
               dragEnter: function(){ l.addStyleClass('drop-hover'); },
               dragLeave: function(){ l.removeStyleClass('drop-hover'); },
               drop: async (oEvent)=>{
