@@ -741,6 +741,132 @@
           return sections;
         }
 
+        function buildUpdateDetailContent(update){
+          if (!update || typeof update !== 'object') { return []; }
+          const toArray = (val)=>{
+            if (!val) return [];
+            if (Array.isArray(val)) return val.filter(Boolean);
+            return String(val).split(',').map(s=>s.trim()).filter(Boolean);
+          };
+          const actionItems = Array.isArray(update.actionItems) ? update.actionItems.filter(Boolean) : [];
+          const attachments = Array.isArray(update.attachments) ? update.attachments.filter(Boolean) : [];
+          const tags = toArray(update.tags);
+
+          const sections = [];
+          const summary = String(update.summary || '').trim();
+          if (summary){
+            sections.push(new sap.m.MessageStrip({
+              text: summary,
+              type: 'Information',
+              showCloseButton:false,
+              showIcon:true
+            }).addStyleClass('sapUiSmallMarginBottom'));
+          }
+
+          const metaContent = [];
+          if (update.category){
+            metaContent.push(new sap.m.ObjectStatus({ text:'Kategorie: ' + update.category, icon:'sap-icon://tags', state:'Information' }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom'));
+          }
+          if (update.priority){
+            const prioLower = String(update.priority).toLowerCase();
+            const prioState = prioLower==='hoch' ? 'Error' : (prioLower==='mittel' ? 'Warning' : 'Success');
+            metaContent.push(new sap.m.ObjectStatus({ text:'Priorität: ' + update.priority, icon:'sap-icon://favorite', state: prioState }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom'));
+          }
+          if (update.owner){
+            metaContent.push(new sap.m.ObjectStatus({ text:'Verantwortlich: ' + update.owner, icon:'sap-icon://account', state:'None' }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom'));
+          }
+          if (update.impact){
+            metaContent.push(new sap.m.ObjectStatus({ text:'Betroffene: ' + update.impact, icon:'sap-icon://group', state:'None' }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom'));
+          }
+          if (update.date){
+            metaContent.push(new sap.m.ObjectStatus({ text:'Datum: ' + update.date, icon:'sap-icon://history', state:'None' }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom'));
+          }
+          if (metaContent.length){
+            sections.push(new sap.m.FlexBox({
+              wrap:'Wrap',
+              fitContainer:true,
+              alignItems:'Center',
+              justifyContent:'Start',
+              items: metaContent
+            }).addStyleClass('sapUiSmallMarginBottom'));
+          }
+
+          const narrative = String(update.content || '').trim();
+          if (narrative){
+            sections.push(new sap.m.FormattedText({
+              htmlText: '<p>'+escapeHtml(narrative).replace(/\n/g,'<br>')+'</p>',
+              sanitizeContent:true
+            }).addStyleClass('sapUiSmallMarginBottom'));
+          }
+
+          if (tags.length){
+            const tokenizer = new sap.m.Tokenizer({ editable:false, width:'100%' });
+            tags.forEach(tag=> tokenizer.addToken(new sap.m.Token({ key: tag, text: tag })));
+            sections.push(new sap.m.VBox({
+              width:'100%',
+              items:[ new sap.m.Label({ text:'Tags' }), tokenizer ]
+            }).addStyleClass('sapUiSmallMarginBottom'));
+          }
+
+          if (actionItems.length){
+            const actionList = new sap.m.List({ headerText:'Maßnahmen & Aufgaben', inset:false, mode:'None' });
+            actionList.bindItems({
+              path:'/',
+              template: new sap.m.CustomListItem({
+                content:[ new sap.m.HBox({
+                  justifyContent:'SpaceBetween',
+                  alignItems:'Start',
+                  items:[
+                    new sap.m.VBox({
+                      items:[
+                        new sap.m.Title({ text:'{title}' }),
+                        new sap.m.Text({ text:{ path:'detail', formatter:function(v){ return v ? v : ''; } }, wrapping:true })
+                      ]
+                    }),
+                    new sap.m.ObjectStatus({
+                      text:{ path:'dueAt', formatter:function(val){ return val ? ('Fällig: ' + fmt.dueText(val)) : 'Termin offen'; } },
+                      state:{ path:'dueAt', formatter:function(val){ return val && fmt.overdue(val) ? 'Error' : 'None'; } }
+                    })
+                  ]
+                }) ]
+              })
+            });
+            const actionData = actionItems.map(item=>({
+              title: item.title || 'Aufgabe',
+              detail: item.detail || '',
+              dueAt: item.dueAt || ''
+            }));
+            actionList.setModel(new sap.ui.model.json.JSONModel(actionData));
+            sections.push(actionList);
+          }
+
+          if (attachments.length){
+            const attachmentList = new sap.m.List({ headerText:'Anhänge', inset:false, mode:'None' });
+            attachmentList.bindItems({
+              path:'/',
+              template: new sap.m.CustomListItem({
+                content:[ new sap.m.HBox({
+                  justifyContent:'SpaceBetween',
+                  alignItems:'Center',
+                  items:[
+                    new sap.m.VBox({ items:[ new sap.m.Title({ text:'{label}' }), new sap.m.Text({ text:'{type}' }) ] }),
+                    new sap.m.Button({ text:'Öffnen', type:'Transparent', icon:'sap-icon://attachment', press:(oEvent)=>{
+                      try{
+                        const data = oEvent.getSource().getBindingContext().getObject();
+                        sap.m.MessageToast.show('Anhang "'+ (data && (data.label || data.type || 'Dokument')) +'" öffnen (Demo)');
+                      }catch(_){ sap.m.MessageToast.show('Anhang öffnen (Demo)'); }
+                    } })
+                  ]
+                }) ]
+              })
+            });
+            attachmentList.setModel(new sap.ui.model.json.JSONModel(attachments.map(att=>({ label: att.name || att.label || 'Anhang', type: att.type || '', url: att.url || '' }))));
+            sections.push(attachmentList);
+          }
+
+          return sections;
+        }
+
         function makeSimpleTab(cfg){
           const sModelPath = cfg.path;
           const descProp = cfg.desc || 'description';
@@ -883,6 +1009,12 @@
             // Drag & Drop group and visuals
             const dragInfo = new sap.ui.core.dnd.DragInfo({ groupName:'tasks', sourceAggregation:'items' });
             const dropInfo = new sap.ui.core.dnd.DropInfo({ groupName:'tasks', targetAggregation:'items' });
+            if (typeof dropInfo.setDropPosition === 'function') {
+              dropInfo.setDropPosition(sap.ui.core.dnd.DropPosition.Between);
+            }
+            if (typeof dropInfo.setDropLayout === 'function') {
+              dropInfo.setDropLayout(sap.ui.core.dnd.DropLayout.Vertical);
+            }
             if (typeof dropInfo.attachDragEnter === 'function') {
               dropInfo.attachDragEnter(function(){ l.addStyleClass('drop-hover'); });
             }
@@ -995,7 +1127,7 @@
         // Tabs Container
         const tabs = new sap.m.IconTabBar({ expandable:false, items:[
           new sap.m.IconTabFilter({ key:'tasks', text:'Aufgaben', count: '{/tasksCount}', icon:'sap-icon://task', content:[ toolbar, chipBar, kpiBar, prioLegend, statsBar, new sap.m.ObjectStatus({ text:'Überfällige Aufgaben werden rot markiert.', state:'None' }), list, adminPanel ] }),
-          new sap.m.IconTabFilter({ key:'updates', text:'Updates', count: '{/updatesCount}', icon:'sap-icon://message-information', content:[ makeSimpleTab({ path:'/updates', title:'Updates', desc:'content', info:'date' }) ] }),
+          new sap.m.IconTabFilter({ key:'updates', text:'Updates', count: '{/updatesCount}', icon:'sap-icon://message-information', content:[ makeSimpleTab({ path:'/updates', title:'Updates', desc:'content', info:'date', detailBuilder: buildUpdateDetailContent, titleProp:'title' }) ] }),
           new sap.m.IconTabFilter({ key:'guides', text:'Anleitungen', count: '{/guidesCount}', icon:'sap-icon://hint', content:[ makeSimpleTab({ path:'/guides', title:'Anleitungen', desc:'description', detailBuilder: buildGuideDetailContent, titleProp:'title', info:'duration' }) ] }),
           new sap.m.IconTabFilter({ key:'events', text:'Aktionstage', count: '{/eventsCount}', icon:'sap-icon://calendar', content:[ makeSimpleTab({ path:'/events', title:'Aktionstage', desc:'description', info:'date' }) ] }),
           new sap.m.IconTabFilter({ key:'board', text:'Board', icon:'sap-icon://kanban', content:[ makeBoard() ] }),
