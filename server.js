@@ -12,23 +12,79 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // Seed data (in-memory)
-let tasks = [
-  { id: 1, title: 'Frischetheke auffüllen', description: 'Kontrolle der Kühlung und Nachfüllen der Ware', priority: 'hoch', status: 'offen', tags: ['Frische','Qualität'], dueAt: new Date(Date.now()+1000*60*90).toISOString(), createdAt: Date.now() - 1000*60*60*6 },
-  { id: 2, title: 'Preisschilder aktualisieren', description: "Aktion 'Frische-Woche' – neue Preisträger in Regal 3A und 3B", priority: 'mittel', status: 'überfällig', tags: ['Aktionstag','Preis'], dueAt: new Date(Date.now()-1000*60*120).toISOString(), createdAt: Date.now() - 1000*60*60*24 },
-  { id: 3, title: 'Backwaren prüfen', description: 'Mindesthaltbarkeit und Aufbackplan kontrollieren', priority: 'niedrig', status: 'in_arbeit', tags: ['Backstube','Hygiene'], dueAt: new Date(Date.now()+1000*60*60*8).toISOString(), createdAt: Date.now() - 1000*60*60*2 },
-  { id: 4, title: 'Wareneingang erfassen', description: 'Neue Lieferung Obst & Gemüse, Eingabe im Warenwirtschaftssystem', priority: 'hoch', status: 'offen', tags: ['Warenwirtschaft','Logistik'], dueAt: new Date(Date.now()+1000*60*60*4).toISOString(), createdAt: Date.now() - 1000*60*60*2 },
-  { id: 5, title: 'Team-Briefing', description: 'Besprechung der Verkäufe der letzten Woche', priority: 'niedrig', status: 'abgeschlossen', tags: ['Team'], dueAt: new Date(Date.now()-1000*60*60*24).toISOString(), createdAt: Date.now() - 1000*60*60*7 },
-  { id: 6, title: 'Kassenschubladen zählen', description: 'Schichtwechsel vorbereiten', priority: 'mittel', status: 'offen', tags: ['Kasse','Schicht'], dueAt: new Date(Date.now()+1000*60*30).toISOString(), createdAt: Date.now() - 1000*60*60 },
-  { id: 7, title: 'Regal 5B faced', description: 'Fronten ordnen und Lücken schließen', priority: 'niedrig', status: 'offen', tags: ['Regalpflege'], dueAt: '', createdAt: Date.now() - 1000*60*40 },
-  { id: 8, title: 'MHD-Kontrolle Kühlregal', description: 'Ablaufende Ware aussortieren', priority: 'hoch', status: 'in_arbeit', tags: ['Hygiene','Frische'], dueAt: new Date(Date.now()+1000*60*180).toISOString(), createdAt: Date.now() - 1000*60*50 },
-  { id: 9, title: 'Mitarbeiterplanung Woche 48', description: 'Urlaube und Schichten abstimmen', priority: 'mittel', status: 'offen', tags: ['Team','Planung'], dueAt: new Date(Date.now()+1000*60*60*24*2).toISOString(), createdAt: Date.now() - 1000*60*60*3 },
-  { id: 10, title: 'Inventur-Spotcheck', description: 'Stichprobe im Lagergang C', priority: 'mittel', status: 'offen', tags: ['Inventur','Lager'], dueAt: '', createdAt: Date.now() - 1000*60*20 },
-  { id: 11, title: 'Leergut-Rücknahme prüfen', description: 'Automat leeren, Quittungen prüfen', priority: 'niedrig', status: 'offen', tags: ['Leergut','Service'], dueAt: '', createdAt: Date.now() - 1000*60*18 },
-  { id: 12, title: 'Kühlkette dokumentieren', description: 'Thermo-Log prüfen und protokollieren', priority: 'hoch', status: 'offen', tags: ['Hygiene','Dokumentation'], dueAt: new Date(Date.now()+1000*60*200).toISOString(), createdAt: Date.now() - 1000*60*90 },
-  { id: 13, title: 'Obst & Gemüse nachbestellen', description: 'Bedarf für Wochenende ermitteln', priority: 'mittel', status: 'in_arbeit', tags: ['Bestellung','Frische'], dueAt: new Date(Date.now()+1000*60*60*28).toISOString(), createdAt: Date.now() - 1000*60*200 },
-  { id: 14, title: 'Mitarbeiter Aushang aktualisieren', description: 'Pausenplan KW48 aushängen', priority: 'niedrig', status: 'abgeschlossen', tags: ['Team','Planung'], dueAt: '', createdAt: Date.now() - 1000*60*300 },
-];
+function buildInitialTasks(){
+  const now = Date.now();
+  return [
+    { id: 1, title: 'Frischetheke auffüllen', description: 'Kontrolle der Kühlung und Nachfüllen der Ware', priority: 'hoch', status: 'offen', tags: ['Frische','Qualität'], dueAt: new Date(now+1000*60*90).toISOString(), createdAt: now - 1000*60*60*6 },
+    { id: 2, title: 'Preisschilder aktualisieren', description: "Aktion 'Frische-Woche' – neue Preisträger in Regal 3A und 3B", priority: 'mittel', status: 'überfällig', tags: ['Aktionstag','Preis'], dueAt: new Date(now-1000*60*120).toISOString(), createdAt: now - 1000*60*60*24 },
+    { id: 3, title: 'Backwaren prüfen', description: 'Mindesthaltbarkeit und Aufbackplan kontrollieren', priority: 'niedrig', status: 'in_arbeit', tags: ['Backstube','Hygiene'], dueAt: new Date(now+1000*60*60*8).toISOString(), createdAt: now - 1000*60*60*2 },
+    { id: 4, title: 'Wareneingang erfassen', description: 'Neue Lieferung Obst & Gemüse, Eingabe im Warenwirtschaftssystem', priority: 'hoch', status: 'offen', tags: ['Warenwirtschaft','Logistik'], dueAt: new Date(now+1000*60*60*4).toISOString(), createdAt: now - 1000*60*60*2 },
+    { id: 5, title: 'Team-Briefing', description: 'Besprechung der Verkäufe der letzten Woche', priority: 'niedrig', status: 'abgeschlossen', tags: ['Team'], dueAt: new Date(now-1000*60*60*24).toISOString(), createdAt: now - 1000*60*60*7 },
+    { id: 6, title: 'Kassenschubladen zählen', description: 'Schichtwechsel vorbereiten', priority: 'mittel', status: 'offen', tags: ['Kasse','Schicht'], dueAt: new Date(now+1000*60*30).toISOString(), createdAt: now - 1000*60*60 },
+    { id: 7, title: 'Regal 5B faced', description: 'Fronten ordnen und Lücken schließen', priority: 'niedrig', status: 'offen', tags: ['Regalpflege'], dueAt: '', createdAt: now - 1000*60*40 },
+    { id: 8, title: 'MHD-Kontrolle Kühlregal', description: 'Ablaufende Ware aussortieren', priority: 'hoch', status: 'in_arbeit', tags: ['Hygiene','Frische'], dueAt: new Date(now+1000*60*180).toISOString(), createdAt: now - 1000*60*50 },
+    { id: 9, title: 'Mitarbeiterplanung Woche 48', description: 'Urlaube und Schichten abstimmen', priority: 'mittel', status: 'offen', tags: ['Team','Planung'], dueAt: new Date(now+1000*60*60*24*2).toISOString(), createdAt: now - 1000*60*60*3 },
+    { id: 10, title: 'Inventur-Spotcheck', description: 'Stichprobe im Lagergang C', priority: 'mittel', status: 'offen', tags: ['Inventur','Lager'], dueAt: '', createdAt: now - 1000*60*20 },
+    { id: 11, title: 'Leergut-Rücknahme prüfen', description: 'Automat leeren, Quittungen prüfen', priority: 'niedrig', status: 'offen', tags: ['Leergut','Service'], dueAt: '', createdAt: now - 1000*60*18 },
+    { id: 12, title: 'Kühlkette dokumentieren', description: 'Thermo-Log prüfen und protokollieren', priority: 'hoch', status: 'offen', tags: ['Hygiene','Dokumentation'], dueAt: new Date(now+1000*60*200).toISOString(), createdAt: now - 1000*60*90 },
+    { id: 13, title: 'Obst & Gemüse nachbestellen', description: 'Bedarf für Wochenende ermitteln', priority: 'mittel', status: 'in_arbeit', tags: ['Bestellung','Frische'], dueAt: new Date(now+1000*60*60*28).toISOString(), createdAt: now - 1000*60*200 },
+    { id: 14, title: 'Mitarbeiter Aushang aktualisieren', description: 'Pausenplan KW48 aushängen', priority: 'niedrig', status: 'abgeschlossen', tags: ['Team','Planung'], dueAt: '', createdAt: now - 1000*60*300 },
+  ];
+}
+let tasks = buildInitialTasks();
 let nextTaskId = () => (tasks.length ? Math.max(...tasks.map(t=>t.id))+1 : 1);
+function requireAuth(req, res, next){
+  const header = String(req.headers.authorization || '').replace(/^bearer\s+/i, '');
+  const token = header || (req.query && req.query.token);
+  if (!token || token !== AUTH_TOKEN) {
+    return res.status(401).json({ ok:false, error:'Unauthorized' });
+  }
+  next();
+}
+function uniqueTagList(currentTasks){
+  const tagMap = new Map();
+  (currentTasks||[]).forEach(t=>{
+    const tags = Array.isArray(t.tags) ? t.tags : String(t.tags||'').split(',');
+    tags.map(s=>String(s).trim()).filter(Boolean).forEach(tag=>{
+      const key = tag.toLowerCase();
+      if (!tagMap.has(key)) tagMap.set(key, { tag, count:0 });
+      tagMap.get(key).count += 1;
+    });
+  });
+  return Array.from(tagMap.values()).sort((a,b)=>b.count-a.count);
+}
+function computeTaskSummary(currentTasks){
+  const data = Array.isArray(currentTasks) ? currentTasks : [];
+  const total = data.length;
+  const status = { offen:0, in_arbeit:0, abgeschlossen:0, sonstige:0 };
+  const priority = { hoch:0, mittel:0, niedrig:0, sonstige:0 };
+  let overdue = 0;
+  let dueSoon = 0;
+  const now = Date.now();
+  data.forEach(task=>{
+    if (!task || typeof task !== 'object') return;
+    const sKey = String(task.status || '').toLowerCase();
+    if (status.hasOwnProperty(sKey)) status[sKey] += 1; else status.sonstige += 1;
+    const pKey = String(task.priority || '').toLowerCase();
+    if (priority.hasOwnProperty(pKey)) priority[pKey] += 1; else priority.sonstige += 1;
+    if (task.dueAt){
+      const due = Date.parse(task.dueAt);
+      if (!Number.isNaN(due)){
+        if (due < now && sKey !== 'abgeschlossen') overdue += 1;
+        else if (due - now < 1000*60*60*24 && due >= now) dueSoon += 1;
+      }
+    }
+  });
+  const topTags = uniqueTagList(data).slice(0, 8);
+  return {
+    total,
+    status,
+    priority,
+    overdue,
+    dueSoon,
+    tags: topTags,
+  };
+}
 
 const updates = [
   { id: 1, title: 'Neue Hygiene-Richtlinie', content: 'Aktualisierte Reinigungsvorgaben für Kühlketten ab KW47.', date: 'Heute, 07:30' },
@@ -85,16 +141,30 @@ app.get('/api/tasks', (req,res)=>{
   const total = out.length;
   const start = (page-1)*pageSize;
   const items = out.slice(start, start+pageSize);
-  res.json({ items, total });
+  res.json({
+    items,
+    total,
+    page,
+    pageSize,
+    generatedAt: new Date().toISOString(),
+    summary: computeTaskSummary(tasks),
+    pageSummary: computeTaskSummary(items),
+    tags: uniqueTagList(tasks)
+  });
 });
-function requireAuth(req,res,next){
-  const h = req.headers.authorization || '';
-  if (h === 'Bearer ' + AUTH_TOKEN) return next();
-  return res.status(401).json({ error:'Unauthorized' });
-}
 app.post('/api/tasks', requireAuth, (req,res)=>{
   const b = req.body || {};
-  const t = { id: nextTaskId(), title: String(b.title||'Neue Aufgabe'), description: String(b.description||''), priority: String(b.priority||'mittel'), status: String(b.status||'offen'), dueAt: b.dueAt||'', createdAt: Date.now() };
+  const tags = Array.isArray(b.tags) ? b.tags : String(b.tags||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const t = {
+    id: nextTaskId(),
+    title: String(b.title||'Neue Aufgabe'),
+    description: String(b.description||''),
+    priority: String(b.priority||'mittel'),
+    status: String(b.status||'offen'),
+    tags,
+    dueAt: b.dueAt||'',
+    createdAt: Date.now()
+  };
   tasks.unshift(t);
   res.json(t);
 });
@@ -103,7 +173,8 @@ app.put('/api/tasks/:id', requireAuth, (req,res)=>{
   const idx = tasks.findIndex(t=>t.id===id);
   if (idx===-1) return res.status(404).json({error:'Not found'});
   const b = req.body || {};
-  tasks[idx] = { ...tasks[idx], ...b };
+  const tags = b.tags !== undefined ? (Array.isArray(b.tags) ? b.tags : String(b.tags||'').split(',').map(s=>s.trim()).filter(Boolean)) : tasks[idx].tags;
+  tasks[idx] = { ...tasks[idx], ...b, tags };
   res.json(tasks[idx]);
 });
 app.delete('/api/tasks/:id', requireAuth, (req,res)=>{
@@ -135,11 +206,41 @@ function generateDemoTasks(n){
   }
   return out;
 }
-app.post('/api/seed', requireAuth, (req,res)=>{
-  const n = Math.max(1, Math.min(30, Number(req.body && req.body.count || 10)));
+function seedDemo(count){
+  const n = Math.max(1, Math.min(30, Number(count || 10)));
   const add = generateDemoTasks(n);
   tasks.unshift(...add);
-  res.json({ ok:true, added: add.length });
+  return add;
+}
+app.post('/api/seed', requireAuth, (req,res)=>{
+  const add = seedDemo(req.body && req.body.count);
+  res.json({ ok:true, added: add.length, summary: computeTaskSummary(tasks), total: tasks.length });
+});
+app.post('/api/admin/seed', requireAuth, (req,res)=>{
+  const n = Math.max(1, Math.min(30, Number(req.body && req.body.count || 10)));
+  const add = seedDemo(n);
+  res.json({ ok:true, added: add.length, summary: computeTaskSummary(tasks), total: tasks.length });
+});
+app.post('/api/admin/reset', requireAuth, (req,res)=>{
+  tasks = buildInitialTasks();
+  res.json({ ok:true, total: tasks.length, summary: computeTaskSummary(tasks) });
+});
+app.get('/api/admin/overview', requireAuth, (req,res)=>{
+  res.json({
+    summary: computeTaskSummary(tasks),
+    tags: uniqueTagList(tasks),
+    latestTasks: tasks.slice(0,5),
+    datasets: {
+      updates: updates.length,
+      guides: guides.length,
+      events: events.length,
+      comments: comments.length
+    },
+    generatedAt: new Date().toISOString()
+  });
+});
+app.get('/api/admin/tags', requireAuth, (req,res)=>{
+  res.json({ tags: uniqueTagList(tasks), total: tasks.length });
 });
 
 // Readonly endpoints

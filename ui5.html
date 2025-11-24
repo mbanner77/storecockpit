@@ -64,13 +64,33 @@
           tasks: [], updates: [], guides: [], events: [],
           tasksCount: 0, updatesCount: 0, guidesCount: 0, eventsCount: 0,
           notificationsCount: 0,
-          tasksLabel: ''
+          tasksLabel: '',
+          dashboard: {
+            summary: { total:0, overdue:0, dueSoon:0, priority:{}, status:{}, tags:[] },
+            tags: [],
+            latest: [],
+            generatedAt: ''
+          }
         });
 
         const busy = new sap.m.BusyDialog();
         let chipBar; // declared early to avoid TDZ when updateFilterSummary runs before toolbar init
+        let needInitialFilterSummary = false;
         // Load admin settings
         try{ adminSettings = JSON.parse(localStorage.getItem('admin_settings')||'{}'); }catch(_){ adminSettings = {}; }
+        async function loadAdminOverview(){
+          if (!authToken) return;
+          try {
+            const resp = await fetch(api + '/admin/overview', { headers: authHeaders() });
+            if (!resp.ok) throw new Error('Admin Überblick fehlgeschlagen');
+            const json = await resp.json();
+            model.setProperty('/dashboard/summary', json.summary || {});
+            model.setProperty('/dashboard/tags', json.tags || []);
+            model.setProperty('/dashboard/latest', json.latestTasks || []);
+            model.setProperty('/dashboard/generatedAt', json.generatedAt || '');
+          } catch(err){ console.warn(err); }
+        }
+
         async function loadAll(){
           busy.open();
           try {
@@ -80,21 +100,39 @@
               fetch(api + '/guides').then(r=>r.json()),
               fetch(api + '/events').then(r=>r.json()),
             ]);
-            if (tasks && tasks.items) { model.setProperty('/tasks', tasks.items); model.setProperty('/tasksTotal', tasks.total||tasks.items.length); model.setProperty('/tasksCount', tasks.items.length); }
-            else { const arr = Array.isArray(tasks)? tasks : (tasks||[]); model.setProperty('/tasks', arr); model.setProperty('/tasksTotal', arr.length); model.setProperty('/tasksCount', arr.length); }
+            if (tasks && tasks.items) {
+              model.setProperty('/tasks', tasks.items);
+              model.setProperty('/tasksTotal', tasks.total||tasks.items.length);
+              model.setProperty('/tasksCount', tasks.items.length);
+              if (tasks.summary) model.setProperty('/dashboard/summary', tasks.summary);
+              if (tasks.tags) model.setProperty('/dashboard/tags', tasks.tags);
+              if (tasks.pageSummary) model.setProperty('/dashboard/pageSummary', tasks.pageSummary);
+            }
+            else {
+              const arr = Array.isArray(tasks)? tasks : (tasks||[]);
+              model.setProperty('/tasks', arr);
+              model.setProperty('/tasksTotal', arr.length);
+              model.setProperty('/tasksCount', arr.length);
+            }
             model.setProperty('/tasksLabel', 'Aufgaben: ' + model.getProperty('/tasksCount') + (model.getProperty('/tasksTotal') ? (' / ' + model.getProperty('/tasksTotal')) : ''));
             model.setProperty('/updates', updates); model.setProperty('/updatesCount', Array.isArray(updates)? updates.length : (updates.items?updates.items.length:0));
             model.setProperty('/guides', guides); model.setProperty('/guidesCount', Array.isArray(guides)? guides.length : (guides.items?guides.items.length:0));
             model.setProperty('/events', events); model.setProperty('/eventsCount', Array.isArray(events)? events.length : (events.items?events.items.length:0));
           } catch(e){
             const sd = window.APP_DATA || {};
+            if (sd.tasks) {
+              model.setProperty('/tasks', sd.tasks);
+              model.setProperty('/tasksTotal', sd.tasks.length);
+              model.setProperty('/tasksCount', sd.tasks.length);
+            }
             model.setProperty('/updates', sd.updates || []); model.setProperty('/updatesCount', (sd.updates||[]).length);
             model.setProperty('/guides', sd.guides || []); model.setProperty('/guidesCount', (sd.guides||[]).length);
             model.setProperty('/events', sd.events || []); model.setProperty('/eventsCount', (sd.events||[]).length);
           } finally { busy.close(); }
         }
         await loadAll();
-        updateFilterSummary();
+        await loadAdminOverview();
+        needInitialFilterSummary = true;
         // polling for new updates/events (configurable)
         let lastUpdateCount = Array.isArray(model.getProperty('/updates')) ? model.getProperty('/updates').length : 0;
         let lastEventCount = Array.isArray(model.getProperty('/events')) ? model.getProperty('/events').length : 0;
@@ -285,6 +323,9 @@
             model.setProperty('/tasks', items);
             model.setProperty('/tasksTotal', json.total || items.length);
             model.setProperty('/tasksCount', items.length);
+            if (json.summary) model.setProperty('/dashboard/summary', json.summary);
+            if (json.pageSummary) model.setProperty('/dashboard/pageSummary', json.pageSummary);
+            if (json.tags) model.setProperty('/dashboard/tags', json.tags);
             model.setProperty('/tasksLabel', 'Aufgaben: ' + model.getProperty('/tasksCount') + (model.getProperty('/tasksTotal') ? (' / ' + model.getProperty('/tasksTotal')) : ''));
             // page-level stats
             let offen=0, inArb=0, abg=0, over=0; const now=Date.now();
@@ -403,6 +444,7 @@
           roleBtn,
           addBtn
         ]});
+        if (needInitialFilterSummary) { updateFilterSummary(); needInitialFilterSummary = false; }
 
         // List & binding with formatter and filters
         const list = new sap.m.List({ inset:false, mode:'MultiSelect', growing:true, growingScrollToLoad:true, selectionChange:updateBulkButtons });
@@ -749,9 +791,41 @@
           new sap.m.ObjectStatus({ text:'Überfällig: {/countOverdue}', state:'Error' })
         ]});
 
+        const tagCloud = new sap.m.VBox({ items:[ new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Top Tags' }), new sap.m.ToolbarSpacer(), new sap.m.Button({ text:'Aktualisieren', icon:'sap-icon://synchronize', press: loadAdminOverview, tooltip:'Admin Überblick erneut laden' }) ] }), new sap.m.FlexBox({ alignItems:'Start', wrap:'Wrap', items:{ path:'/dashboard/tags', template: new sap.m.ObjectStatus({ text:'{tag} ({count})', state:'None' }).addStyleClass('sapUiSmallMargin') } }) ] });
+        const latestList = new sap.m.List({ headerText:'Neueste Aufgaben (Admin)', visible: { path:'/role', formatter:(r)=> r==='lead' } });
+        latestList.bindItems({ path:'/dashboard/latest', template: new sap.m.StandardListItem({ title:'{title}', description:'{priority} • {status}', info: { path:'dueAt', formatter: fmt.dueText } }) });
+        const adminPanel = new sap.m.Panel({ expandable:true, expanded:false, headerText:'Admin Dashboard', headerToolbar: new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Admin Dashboard' }), new sap.m.ToolbarSpacer(), new sap.m.Button({ text:'Demo-Daten hinzufügen', icon:'sap-icon://add-product', type:'Emphasized', press: async ()=>{
+          if (!authToken) { sap.m.MessageToast.show('Bitte Token setzen'); return; }
+          try {
+            busy.open();
+            const resp = await fetch(api + '/admin/seed', { method:'POST', headers: authHeaders(), body: JSON.stringify({ count:5 }) });
+            const json = await resp.json();
+            if (json && json.summary){ model.setProperty('/dashboard/summary', json.summary); }
+            await loadTasks();
+            await loadAdminOverview();
+            sap.m.MessageToast.show('5 Demo-Aufgaben hinzugefügt');
+          } catch(err){ sap.m.MessageToast.show('Seed fehlgeschlagen'); }
+          finally { busy.close(); }
+        } }), new sap.m.Button({ text:'Zurücksetzen', type:'Reject', icon:'sap-icon://reset', press: async ()=>{
+          if (!authToken) { sap.m.MessageToast.show('Bitte Token setzen'); return; }
+          try {
+            busy.open();
+            const confirm = confirm('Alle Aufgaben auf Ausgangszustand zurücksetzen?');
+            if (!confirm) return;
+            const resp = await fetch(api + '/admin/reset', { method:'POST', headers: authHeaders() });
+            if (resp.ok){ await loadTasks(); await loadAdminOverview(); sap.m.MessageToast.show('Zurückgesetzt'); }
+            else { sap.m.MessageToast.show('Zurücksetzen fehlgeschlagen'); }
+          } catch(err){ sap.m.MessageToast.show('Zurücksetzen fehlgeschlagen'); }
+          finally { busy.close(); }
+        } }) ] }), content:[
+          new sap.m.MessageStrip({ text:'Zusammenfassung: {= ${/dashboard/summary/total} + " Aufgaben • Überfällig: " + ${/dashboard/summary/overdue} + " • In 24h fällig: " + ${/dashboard/summary/dueSoon} }', type:'Information', showIcon:true, showCloseButton:false }),
+          tagCloud,
+          latestList
+        ]});
+
         // Tabs Container
         const tabs = new sap.m.IconTabBar({ expandable:false, items:[
-          new sap.m.IconTabFilter({ key:'tasks', text:'Aufgaben', count: '{/tasksCount}', icon:'sap-icon://task', content:[ toolbar, chipBar, kpiBar, prioLegend, statsBar, new sap.m.ObjectStatus({ text:'Überfällige Aufgaben werden rot markiert.', state:'None' }), list ] }),
+          new sap.m.IconTabFilter({ key:'tasks', text:'Aufgaben', count: '{/tasksCount}', icon:'sap-icon://task', content:[ toolbar, chipBar, kpiBar, prioLegend, statsBar, new sap.m.ObjectStatus({ text:'Überfällige Aufgaben werden rot markiert.', state:'None' }), list, adminPanel ] }),
           new sap.m.IconTabFilter({ key:'updates', text:'Updates', count: '{/updatesCount}', icon:'sap-icon://message-information', content:[ makeSimpleTab({ path:'/updates', title:'Updates', desc:'content', info:'date' }) ] }),
           new sap.m.IconTabFilter({ key:'guides', text:'Anleitungen', count: '{/guidesCount}', icon:'sap-icon://hint', content:[ makeSimpleTab({ path:'/guides', title:'Anleitungen', desc:'description' }) ] }),
           new sap.m.IconTabFilter({ key:'events', text:'Aktionstage', count: '{/eventsCount}', icon:'sap-icon://calendar', content:[ makeSimpleTab({ path:'/events', title:'Aktionstage', desc:'description', info:'date' }) ] }),

@@ -8,7 +8,9 @@
       (function(){
         try{
           if (!location.search.includes('legacy=true')) {
-            window.location.replace('./ui5.html');
+            var v = (window.__BUILD_VERSION__ || Date.now());
+            var url = './ui5.html?v=' + encodeURIComponent(v);
+            window.location.replace(url);
           }
         }catch(e){}
       })();
