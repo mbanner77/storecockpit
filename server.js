@@ -87,29 +87,346 @@ function computeTaskSummary(currentTasks){
 }
 
 const updates = [
-  { id: 1, title: 'Neue Hygiene-Richtlinie', content: 'Aktualisierte Reinigungsvorgaben für Kühlketten ab KW47.', date: 'Heute, 07:30' },
-  { id: 2, title: 'Aktion Frische-Woche', content: 'Zentrale stellt Werbematerialien für die Aktion bereit. Bitte prominent platzieren.', date: 'Gestern, 16:45' },
-  { id: 3, title: 'System-Update Warenwirtschaft', content: 'Geplantes Update am Freitag, 22:00 Uhr. Kurzer Ausfall möglich.', date: 'Gestern, 09:15' },
-  { id: 4, title: 'Neue Lieferantenvereinbarung', content: 'Preisänderungen bei Molkereiprodukten ab nächster Woche.', date: 'Heute, 10:05' },
-  { id: 5, title: 'Personalinfo', content: 'Neue Kollegin im Team ab Montag – bitte einarbeiten.', date: 'Heute, 12:20' },
-  { id: 6, title: 'Sicherheitsunterweisung', content: 'Jährliche Sicherheitsunterweisung bis Ende des Monats absolvieren.', date: 'Heute, 13:10' }
+  {
+    id: 1,
+    title: 'Neue Hygiene-Richtlinie',
+    content: 'Aktualisierte Reinigungsvorgaben für Kühlketten ab KW47. Alle Filialen müssen die neue Dokumentation bis Ende der Woche unterschreiben.',
+    date: 'Heute, 07:30',
+    category: 'Hygiene',
+    owner: 'Sarah Krüger',
+    priority: 'hoch',
+    impact: 'Alle Mitarbeitenden in Frische und Lager',
+    tags: ['Hygiene', 'Compliance'],
+    actionItems: [
+      { title: 'Checkliste Version 4.2 aushängen', detail: 'Aushang am Schwarze Brett und Kantine ergänzen.', dueAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString() },
+      { title: 'Team-Briefing dokumentieren', detail: 'Teilnehmerliste unterschreiben lassen und Foto der Präsentation ergänzen.', dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }
+    ],
+    attachments: [
+      { name: 'Richtlinie_Kuehlkette_v42.pdf', type: 'PDF' },
+      { name: 'Schulungsfolien.pptx', type: 'PPTX' }
+    ],
+    summary: 'Neue Hygiene-Vorgaben ersetzen die bisherige Version 4.1. Umsetzung ist verpflichtend.'
+  },
+  {
+    id: 2,
+    title: 'Aktion Frische-Woche',
+    content: 'Die Zentrale stellt Werbematerialien für die Frische-Woche bereit. Bitte Positionierung der Aufsteller prüfen und zusätzliche Kostproben Samstag anbieten.',
+    date: 'Gestern, 16:45',
+    category: 'Marketing',
+    owner: 'Daniela Rehm',
+    priority: 'mittel',
+    impact: 'Verkauf & Promotionsteam',
+    tags: ['Aktionstag', 'Verkauf'],
+    actionItems: [
+      { title: 'Aufsteller vor Obstbereich platzieren', detail: 'LED-Beleuchtung aktivieren und QR-Code prüfen.', dueAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString() },
+      { title: 'Kostprobenliste an Kasse hinterlegen', detail: 'Liste mit Allergenen an Kassen A & B entsprechend ablegen.', dueAt: new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString() }
+    ],
+    attachments: [
+      { name: 'Poster_A1.jpg', type: 'Bild' }
+    ],
+    summary: 'Frische-Woche läuft kommende Woche – Fokus auf Obst & Gemüse sowie Käsetheke.'
+  },
+  {
+    id: 3,
+    title: 'System-Update Warenwirtschaft',
+    content: 'Geplantes Update am Freitag, 22:00 Uhr. Während des Updates ist der Wareneingang für ca. 15 Minuten nur eingeschränkt verfügbar.',
+    date: 'Gestern, 09:15',
+    category: 'IT',
+    owner: 'IT-Support Retail',
+    priority: 'niedrig',
+    impact: 'Wareneingang & Inventur',
+    tags: ['IT', 'System'],
+    actionItems: [
+      { title: 'Offene Wareneingänge bis 21:30 verbuchen', detail: 'Priorität auf Frische und Tiefkühl, Rest am Folgetag.', dueAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() }
+    ],
+    attachments: [],
+    summary: 'Nach dem Update stehen neue Plausibilitätsprüfungen zur Verfügung.'
+  },
+  {
+    id: 4,
+    title: 'Neue Lieferantenvereinbarung',
+    content: 'Preisänderungen bei Molkereiprodukten ab nächster Woche. Die neuen Preisschilder werden automatisch gedruckt – bitte Sichtkontrolle durchführen.',
+    date: 'Heute, 10:05',
+    category: 'Beschaffung',
+    owner: 'Einkauf Zentrale',
+    priority: 'mittel',
+    impact: 'Molkereiprodukte',
+    tags: ['Preis', 'Lieferant'],
+    actionItems: [
+      { title: 'Neue Preise in Frischetheke prüfen', detail: 'Kontrolle der Regalstopper und Digitalschilder in Gang F.', dueAt: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString() }
+    ],
+    attachments: [
+      { name: 'Preisuebersicht_Q4.xlsx', type: 'Excel' }
+    ],
+    summary: 'Preisanpassung fällt moderat aus; Fokus auf Vollsortiment sicherstellen.'
+  },
+  {
+    id: 5,
+    title: 'Personalinfo',
+    content: 'Neue Kollegin im Team ab Montag – bitte Einführung in Hygienestandards und Kassensystem vorbereiten.',
+    date: 'Heute, 12:20',
+    category: 'HR',
+    owner: 'Filialleitung',
+    priority: 'mittel',
+    impact: 'Gesamtes Team',
+    tags: ['Personal', 'Onboarding'],
+    actionItems: [
+      { title: 'Paten für Einführung benennen', detail: 'Schichten abstimmen und Übergabe E-Learning vorbereiten.', dueAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString() },
+      { title: 'Zugang für Systeme beantragen', detail: 'Retail-Portal, Warenwirtschaft und Kassensystem freischalten.', dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }
+    ],
+    attachments: [],
+    summary: 'Onboarding bitte bis Dienstag abschließen.'
+  },
+  {
+    id: 6,
+    title: 'Sicherheitsunterweisung',
+    content: 'Jährliche Sicherheitsunterweisung bis Ende des Monats absolvieren. Teilnahme ist verpflichtend, Nachweise bitte sammeln.',
+    date: 'Heute, 13:10',
+    category: 'Compliance',
+    owner: 'Arbeitssicherheit',
+    priority: 'hoch',
+    impact: 'Alle Mitarbeitenden',
+    tags: ['Sicherheit', 'Pflichtschulung'],
+    actionItems: [
+      { title: 'Training Termin im Teamkalender eintragen', detail: 'Teilnehmer:innen namentlich ergänzen, Raum Reservierung prüfen.', dueAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString() }
+    ],
+    attachments: [
+      { name: 'Unterweisung_2025.pdf', type: 'PDF' }
+    ],
+    summary: 'Unterweisung muss von jeder Schicht bestätigt werden.'
+  }
 ];
 const guides = [
-  { id: 1, title: 'Warenwirtschaft Einstieg', description: 'Schritt-für-Schritt-Anleitung zur Buchung von Wareneingängen' },
-  { id: 2, title: 'Kassensystem Schulung', description: 'Video-Tutorial zur Bedienung des Kassensystems' },
-  { id: 3, title: 'Hygiene Checklisten', description: 'Vorlage für tägliche Hygienekontrollen' },
-  { id: 4, title: 'Inventur Leitfaden', description: 'Best Practice für die jährliche Inventur' },
-  { id: 5, title: 'Regalpflege', description: 'Planogramme lesen und korrekt umsetzen' },
-  { id: 6, title: 'Aktionsplanung', description: 'Best Practices zur Vorbereitung von Aktionstagen' },
-  { id: 7, title: 'MHD-Kontrolle', description: 'Checkliste zur Mindesthaltbarkeitsprüfung' },
+  {
+    id: 1,
+    title: 'Warenwirtschaft Einstieg',
+    description: 'Schritt-für-Schritt-Anleitung zur Buchung von Wareneingängen',
+    duration: '20 Minuten',
+    difficulty: 'Einsteiger',
+    owner: 'Marc Vogel',
+    tags: ['Warenwirtschaft', 'IT'],
+    prerequisites: ['Zugangsdaten Warenwirtschaft', 'Scannergerät bereitstellen'],
+    steps: [
+      { title: 'Wareneingang öffnen', detail: 'Im Hauptmenü den Menüpunkt "Wareneingang" wählen.' },
+      { title: 'Lieferung auswählen', detail: 'Liefernummer scannen oder manuell eingeben.' },
+      { title: 'Positionen prüfen', detail: 'Menge und Qualität kontrollieren, Abweichungen vermerken.' }
+    ],
+    resources: [
+      { label: 'Video: Wareneingang buchen', type: 'Video' },
+      { label: 'Checkliste Wareneingang.pdf', type: 'PDF' }
+    ]
+  },
+  {
+    id: 2,
+    title: 'Kassensystem Schulung',
+    description: 'Video-Tutorial zur Bedienung des Kassensystems',
+    duration: '15 Minuten',
+    difficulty: 'Einsteiger',
+    owner: 'Trainingsteam Retail',
+    tags: ['Kasse', 'Schulung'],
+    prerequisites: ['Kassenterminal freigeschaltet', 'Supervisor-Karte'],
+    steps: [
+      { title: 'Anmeldung', detail: 'Mit Mitarbeiterkarte oder Nummer anmelden.' },
+      { title: 'Verkaufsvorgang', detail: 'Artikel scannen, Rabatte anwenden, Zahlung abschließen.' },
+      { title: 'Tagesabschluss', detail: 'Kassenbericht drucken und Unterschrift einholen.' }
+    ],
+    resources: [
+      { label: 'Video: Kassensystem kompakt', type: 'Video' },
+      { label: 'FAQ Kassensystem', type: 'Dokument' }
+    ]
+  },
+  {
+    id: 3,
+    title: 'Hygiene Checklisten',
+    description: 'Vorlage für tägliche Hygienekontrollen',
+    duration: '30 Minuten',
+    difficulty: 'Fortgeschritten',
+    owner: 'Qualitätsmanagement',
+    tags: ['Hygiene', 'Qualität'],
+    prerequisites: ['Reinigungsplan vorhanden'],
+    steps: [
+      { title: 'Reinigungsplan prüfen', detail: 'Aktualität und Verantwortlichkeiten abstimmen.' },
+      { title: 'Checkliste durchlaufen', detail: 'Alle Punkte abhaken, Fotos bei Abweichungen machen.' },
+      { title: 'Dokumentation ablegen', detail: 'Unterlagen im Hygieneordner archivieren.' }
+    ],
+    resources: [
+      { label: 'Checkliste Hygiene.xlsx', type: 'Excel' }
+    ]
+  },
+  {
+    id: 4,
+    title: 'Inventur Leitfaden',
+    description: 'Best Practice für die jährliche Inventur',
+    duration: '45 Minuten',
+    difficulty: 'Fortgeschritten',
+    owner: 'Controlling',
+    tags: ['Inventur', 'Lager'],
+    prerequisites: ['Inventurdatum festgelegt', 'Team eingeteilt'],
+    steps: [
+      { title: 'Vorbereitung', detail: 'Zähllisten drucken und Verteilen organisieren.' },
+      { title: 'Zählung', detail: 'Team in Zweiergruppen einteilen, Differenzen festhalten.' },
+      { title: 'Nachbereitung', detail: 'Differenzen analysieren und freigeben.' }
+    ],
+    resources: [
+      { label: 'Inventur-Checkliste.pdf', type: 'PDF' }
+    ]
+  },
+  {
+    id: 5,
+    title: 'Regalpflege',
+    description: 'Planogramme lesen und korrekt umsetzen',
+    duration: '25 Minuten',
+    difficulty: 'Mittel',
+    owner: 'Merchandising',
+    tags: ['Regal', 'Visual Merchandising'],
+    prerequisites: ['Aktuelles Planogramm liegt vor'],
+    steps: [
+      { title: 'Planogramm verstehen', detail: 'Layout und Facings prüfen.' },
+      { title: 'Regal umsetzen', detail: 'Produkte nach Vorgabe platzieren.' },
+      { title: 'Kontrolle', detail: 'Foto vom fertigen Regal erstellen.' }
+    ],
+    resources: [
+      { label: 'Planogramm KW48.pdf', type: 'PDF' }
+    ]
+  },
+  {
+    id: 6,
+    title: 'Aktionsplanung',
+    description: 'Best Practices zur Vorbereitung von Aktionstagen',
+    duration: '35 Minuten',
+    difficulty: 'Fortgeschritten',
+    owner: 'Marketing',
+    tags: ['Aktionstag', 'Planung'],
+    prerequisites: ['Aktionskalender abgestimmt'],
+    steps: [
+      { title: 'Ziele definieren', detail: 'Absatz- und Besucherziele priorisieren.' },
+      { title: 'Maßnahmen planen', detail: 'Personal, Layout und Werbemittel planen.' },
+      { title: 'Erfolg messen', detail: 'KPIs nach Aktion erfassen.' }
+    ],
+    resources: [
+      { label: 'Aktionskalender Vorlage.xlsx', type: 'Excel' }
+    ]
+  },
+  {
+    id: 7,
+    title: 'MHD-Kontrolle',
+    description: 'Checkliste zur Mindesthaltbarkeitsprüfung',
+    duration: '10 Minuten',
+    difficulty: 'Einsteiger',
+    owner: 'Filialleitung',
+    tags: ['Hygiene', 'Frische'],
+    prerequisites: ['Scanner für Etiketten'],
+    steps: [
+      { title: 'Bereich wählen', detail: 'Zuerst gekühlte Waren prüfen.' },
+      { title: 'Produkte kontrollieren', detail: 'Artikel mit kurzem MHD aussortieren.' },
+      { title: 'Reduzierung vornehmen', detail: 'Preisnachlass etikettieren und dokumentieren.' }
+    ],
+    resources: [
+      { label: 'MHD-Kontrolle Ablauf.pdf', type: 'PDF' }
+    ]
+  },
 ];
 const events = [
-  { id: 1, title: 'Frische-Woche Start', description: 'Promotionsaufbau und Sampling-Station einrichten', date: 'Heute' },
-  { id: 2, title: 'Loyalty Programm', description: 'Extra-Bonus Punkte für Stammkunden', date: 'Morgen' },
-  { id: 3, title: 'Black Friday Vorbereitung', description: 'Teambriefing und Nachbestellungen', date: 'In 3 Tagen' },
-  { id: 4, title: 'Regionale Woche', description: 'Produkte lokaler Lieferanten hervorheben', date: 'Nächste Woche' },
-  { id: 5, title: 'Sicherheitsaudit', description: 'Interne Prüfung der Filiale', date: 'In 10 Tagen' },
-  { id: 6, title: 'Betriebsversammlung', description: 'Quartalsmeeting mit der Bezirksleitung', date: 'In 14 Tagen' }
+  {
+    id: 1,
+    title: 'Frische-Woche Start',
+    description: 'Promotionsaufbau und Sampling-Station einrichten. Schwerpunkt: Obst & Gemüse, Käsetheke.',
+    date: 'Heute',
+    location: 'Verkaufsfläche / Eingangsbereich',
+    responsible: 'Marketing-Team',
+    checklist: [
+      { title: 'Aufsteller platzieren', detail: 'Großformatige Banner neben Eingang, Tisch mit Branding.' },
+      { title: 'Sampling vorbereiten', detail: 'Kostproben mit Allergiehinweisen auszeichnen.' },
+      { title: 'Social Media Bild posten', detail: 'Story mit Hashtag #FrischeWoche hochladen.' }
+    ],
+    participants: [
+      { name: 'Anna Krüger', role: 'Teamleitung Frische' },
+      { name: 'Luis Becker', role: 'Promotion' }
+    ]
+  },
+  {
+    id: 2,
+    title: 'Loyalty Programm',
+    description: 'Extra-Bonus Punkte für Stammkunden. Fokus auf App-Push und Kassendisplays.',
+    date: 'Morgen',
+    location: 'Kassenbereich',
+    responsible: 'CRM / Kundenbindung',
+    checklist: [
+      { title: 'Push-Nachricht freigeben', detail: 'Text im HQ-Portal bestätigen lassen.' },
+      { title: 'Display Loop aktualisieren', detail: 'Kassendisplay-Playlist auf Campaign-Ordner wechseln.' }
+    ],
+    participants: [
+      { name: 'Mila Sommer', role: 'CRM Managerin' },
+      { name: 'Tim Riedl', role: 'IT Support' }
+    ]
+  },
+  {
+    id: 3,
+    title: 'Black Friday Vorbereitung',
+    description: 'Teambriefing und Nachbestellungen. Fokusartikel: Technik-Gadgets und Haushaltsgeräte.',
+    date: 'In 3 Tagen',
+    location: 'Backoffice Konfi-Raum',
+    responsible: 'Filialleitung',
+    checklist: [
+      { title: 'Briefing Agenda finalisieren', detail: 'Verkaufsziele, Personalplanung, Servicepunkte.' },
+      { title: 'Nachbestellungen prüfen', detail: 'Top 20 Artikel mit Distribution abstimmen.' },
+      { title: 'Visual Merchandising planen', detail: 'Planogramm für Aktionsfläche genehmigen.' }
+    ],
+    participants: [
+      { name: 'Svenja Adler', role: 'Filialleitung' },
+      { name: 'Kevin Otto', role: 'Schichtleiter' },
+      { name: 'Nora Yilmaz', role: 'Visual Merchandising' }
+    ]
+  },
+  {
+    id: 4,
+    title: 'Regionale Woche',
+    description: 'Produkte lokaler Lieferanten hervorheben. Tasting-Station am Samstag einplanen.',
+    date: 'Nächste Woche',
+    location: 'Regionale Erlebnisfläche',
+    responsible: 'Einkauf Regional',
+    checklist: [
+      { title: 'Lieferantenmaterial abholen', detail: 'Banner & Flyer bei Zentrale 2 abholen.' },
+      { title: 'Storytelling-Tafeln drucken', detail: 'DIN A3 Poster aus Plotterraum.' }
+    ],
+    participants: [
+      { name: 'Lena Maier', role: 'Einkauf' },
+      { name: 'Jonas Witt', role: 'Verkostung' }
+    ]
+  },
+  {
+    id: 5,
+    title: 'Sicherheitsaudit',
+    description: 'Interne Prüfung der Filiale. Fokus auf Brandschutz, Kälteanlagen und Arbeitssicherheit.',
+    date: 'In 10 Tagen',
+    location: 'Gesamte Filiale',
+    responsible: 'Arbeitssicherheit',
+    checklist: [
+      { title: 'Audit-Checkliste aktualisieren', detail: 'Neue Vorgaben Q4 berücksichtigen.' },
+      { title: 'Gefahrstoffschrank prüfen', detail: 'Inventar mit Register abgleichen.' }
+    ],
+    participants: [
+      { name: 'Sandra Koch', role: 'Sicherheitsbeauftragte' },
+      { name: 'Mario Kraus', role: 'Technik' }
+    ]
+  },
+  {
+    id: 6,
+    title: 'Betriebsversammlung',
+    description: 'Quartalsmeeting mit der Bezirksleitung. Themen: Umsatz, Personal, Investitionen.',
+    date: 'In 14 Tagen',
+    location: 'Konferenzraum 1. OG',
+    responsible: 'Bezirksleitung',
+    checklist: [
+      { title: 'Agenda verschicken', detail: 'Mindestens 7 Tage vorher mit Unterlagen.' },
+      { title: 'Technik-Check durchführen', detail: 'Mikrofon, Beamer, Hybrid-Zugang testen.' }
+    ],
+    participants: [
+      { name: 'Stefan Meyer', role: 'Bezirksleiter' },
+      { name: 'Julia Brandt', role: 'HR Business Partnerin' },
+      { name: 'Sophie Lang', role: 'Filialcontrolling' }
+    ]
+  }
 ];
 
 // Health
