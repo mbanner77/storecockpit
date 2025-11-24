@@ -14,6 +14,70 @@
     <link rel="stylesheet" href="./assets/styles.css" />
     <style>
       html, body, #content { height: 100%; }
+      .detail-panel {
+        margin-bottom: 1rem;
+        border-radius: 0.75rem;
+        box-shadow: 0 8px 20px rgba(9, 30, 66, 0.1);
+        overflow: hidden;
+        border: 1px solid #d0dae6;
+      }
+      .detail-panel .sapMPanelContent {
+        padding: 0.75rem 1rem 1rem 1rem;
+        background: rgba(255, 255, 255, 0.96);
+      }
+      .detail-panel__icon {
+        margin-right: 0.5rem;
+        color: #0a6ed1;
+      }
+      .detail-panel__toolbar {
+        background: linear-gradient(135deg, rgba(10, 110, 209, 0.1), rgba(10, 110, 209, 0));
+        padding: 0.5rem 1rem;
+      }
+      .detail-description {
+        line-height: 1.55;
+        font-size: 0.95rem;
+      }
+      .detail-summary {
+        border-left: 4px solid #0a6ed1;
+      }
+      .detail-tokenizer {
+        width: 100%;
+      }
+      .calendar-top {
+        gap: 16px;
+        margin-bottom: 1rem;
+      }
+      .calendar-box {
+        min-width: 280px;
+        max-width: 320px;
+        background: rgba(255,255,255,0.95);
+        border-radius: 0.75rem;
+        box-shadow: 0 6px 18px rgba(9, 30, 66, 0.1);
+        padding: 1rem;
+        border: 1px solid #d0dae6;
+      }
+      .calendar-visual {
+        min-height: 220px;
+        background: linear-gradient(135deg, rgba(10,110,209,0.12), rgba(120, 164, 255, 0.08) 40%, rgba(255,255,255,0.95) 100%);
+        border-radius: 0.75rem;
+        position: relative;
+        overflow: hidden;
+        border: 1px solid rgba(13, 71, 161, 0.08);
+      }
+      .calendar-visual::after {
+        content: "";
+        position: absolute;
+        top: -40px;
+        right: -60px;
+        width: 220px;
+        height: 220px;
+        background: radial-gradient(circle at center, rgba(10,110,209,0.2) 0%, rgba(10,110,209,0) 70%);
+      }
+      .calendar-visual__content {
+        padding: 1.5rem;
+        gap: 0.5rem;
+        color: #0a1f44;
+      }
     </style>
   </head>
   <body class="sapUiBody sapUiSizeCompact" id="content">
@@ -625,6 +689,17 @@
             .replace(/'/g,'&#39;');
         }
 
+        function detailPanel(title, icon, controls){
+          if (!controls || !Array.isArray(controls) || !controls.length) { return null; }
+          const iconControl = new sap.ui.core.Icon({ src: icon, size: '1.2rem', decorative: false });
+          iconControl.addStyleClass('detail-panel__icon');
+          const toolbar = new sap.m.Toolbar({ content:[ iconControl, new sap.m.Title({ text: title }), new sap.m.ToolbarSpacer() ] });
+          toolbar.addStyleClass('detail-panel__toolbar');
+          const panel = new sap.m.Panel({ expandable:false, expanded:true, headerToolbar: toolbar }).addStyleClass('detail-panel');
+          panel.addContent(new sap.m.VBox({ width:'100%', items: controls }));
+          return panel;
+        }
+
         function buildGuideDetailContent(guide){
           if (!guide || typeof guide !== 'object') { return []; }
           const toArray = (val)=>{
@@ -639,8 +714,10 @@
 
           const sections = [];
           const description = String(guide.description || guide.summary || '').trim();
+
+          const overviewControls = [];
           if (description){
-            sections.push(new sap.m.FormattedText({
+            overviewControls.push(new sap.m.FormattedText({
               htmlText: '<div class="detail-section">'+escapeHtml(description).replace(/\n/g,'<br>')+'</div>',
               sanitizeContent: true
             }).addStyleClass('sapUiSmallMarginBottom detail-description'));
@@ -648,77 +725,69 @@
 
           const metaChips = [];
           if (guide.duration){
-            const durationStatus = new sap.m.ObjectStatus({
+            metaChips.push(new sap.m.ObjectStatus({
               text: 'Dauer: ' + guide.duration,
               icon: 'sap-icon://time-entry-request',
               state: 'Information'
-            }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom');
-            metaChips.push(durationStatus);
+            }).addStyleClass('sapUiTinyMarginEnd'));
           }
           if (guide.difficulty){
             const diffState = guide.difficulty === 'Einsteiger' ? 'Success' : (guide.difficulty === 'Fortgeschritten' ? 'Warning' : 'None');
-            const diffStatus = new sap.m.ObjectStatus({
+            metaChips.push(new sap.m.ObjectStatus({
               text: 'Level: ' + guide.difficulty,
               icon: 'sap-icon://initiative',
               state: diffState
-            }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom');
-            metaChips.push(diffStatus);
+            }).addStyleClass('sapUiTinyMarginEnd'));
           }
           if (guide.owner){
-            const ownerStatus = new sap.m.ObjectStatus({
+            metaChips.push(new sap.m.ObjectStatus({
               text: 'Verantwortlich: ' + guide.owner,
               icon: 'sap-icon://person-placeholder',
               state: 'None'
-            }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom');
-            metaChips.push(ownerStatus);
+            }).addStyleClass('sapUiTinyMarginEnd'));
           }
           if (metaChips.length){
-            sections.push(new sap.m.FlexBox({
-              wrap: 'Wrap',
-              fitContainer: true,
-              alignItems: 'Center',
-              justifyContent: 'Start',
-              items: metaChips
-            }).addStyleClass('sapUiSmallMarginBottom'));
+            overviewControls.push(new sap.m.FlexBox({ wrap: 'Wrap', alignItems:'Center', items: metaChips }).addStyleClass('detail-meta sapUiSmallMarginBottom'));
           }
 
           const summaryBadges = [];
           if (steps.length){
-            summaryBadges.push(new sap.m.ObjectStatus({ text: steps.length + ' Schritte', icon:'sap-icon://process', state:'Success' }).addStyleClass('sapUiTinyMarginEnd'));
+            summaryBadges.push(new sap.m.ObjectStatus({ text: steps.length + ' Schritte', icon:'sap-icon://process', state:'Success' }));
           }
           if (prerequisites.length){
-            summaryBadges.push(new sap.m.ObjectStatus({ text: prerequisites.length + ' Voraussetzungen', icon:'sap-icon://checklist', state:'None' }).addStyleClass('sapUiTinyMarginEnd'));
+            summaryBadges.push(new sap.m.ObjectStatus({ text: prerequisites.length + ' Voraussetzungen', icon:'sap-icon://checklist', state:'None' }));
           }
           if (resources.length){
-            summaryBadges.push(new sap.m.ObjectStatus({ text: resources.length + ' Ressourcen', icon:'sap-icon://attachment', state:'None' }).addStyleClass('sapUiTinyMarginEnd'));
+            summaryBadges.push(new sap.m.ObjectStatus({ text: resources.length + ' Ressourcen', icon:'sap-icon://attachment', state:'None' }));
           }
           if (summaryBadges.length){
-            sections.push(new sap.m.Toolbar({ content: summaryBadges }).addStyleClass('sapUiSmallMarginBottom'));
+            overviewControls.push(new sap.m.Toolbar({ content: summaryBadges }).addStyleClass('sapUiSmallMarginBottom detail-meta'));
           }
+
+          const overviewPanel = detailPanel('Überblick', 'sap-icon://overview-chart', overviewControls);
+          if (overviewPanel) { sections.push(overviewPanel); }
 
           if (tags.length){
             const tokenizer = new sap.m.Tokenizer({ editable:false, width:'100%' });
             tags.forEach(tag=> tokenizer.addToken(new sap.m.Token({ key: tag, text: tag })));
-            sections.push(new sap.m.VBox({
-              width:'100%',
-              items:[ new sap.m.Label({ text:'Tags' }), tokenizer ]
-            }).addStyleClass('sapUiSmallMarginBottom'));
+            tokenizer.addStyleClass('detail-tokenizer');
+            const tagPanel = detailPanel('Tags', 'sap-icon://tags', [ tokenizer ]);
+            if (tagPanel) { sections.push(tagPanel); }
           }
 
           if (prerequisites.length){
-            const prereqList = new sap.m.List({ headerText:'Voraussetzungen', inset:false });
+            const prereqList = new sap.m.List({ inset:false, showSeparators:'Inner' });
             prereqList.bindItems({
               path:'/',
-              template: new sap.m.StandardListItem({
-                title:'{text}'
-              })
+              template: new sap.m.StandardListItem({ title:'{text}' })
             });
             prereqList.setModel(new sap.ui.model.json.JSONModel(prerequisites.map(text=>({ text }))));
-            sections.push(prereqList);
+            const prereqPanel = detailPanel('Voraussetzungen', 'sap-icon://clipboard', [ prereqList ]);
+            if (prereqPanel) { sections.push(prereqPanel); }
           }
 
           if (steps.length){
-            const stepList = new sap.m.List({ headerText:'Schritte', inset:false });
+            const stepList = new sap.m.List({ inset:false, showSeparators:'Inner' });
             stepList.bindItems({
               path:'/',
               template: new sap.m.ObjectListItem({
@@ -731,11 +800,12 @@
             });
             const stepData = steps.map((step, idx)=>({ index: (idx+1)+'.', title: step.title || ('Schritt '+(idx+1)), detail: step.detail || '' }));
             stepList.setModel(new sap.ui.model.json.JSONModel(stepData));
-            sections.push(stepList);
+            const stepsPanel = detailPanel('Schritte', 'sap-icon://process', [ stepList ]);
+            if (stepsPanel) { sections.push(stepsPanel); }
           }
 
           if (resources.length){
-            const resourceList = new sap.m.List({ headerText:'Ressourcen & Anhänge', inset:false, mode:'None' });
+            const resourceList = new sap.m.List({ inset:false, showSeparators:'Inner', mode:'None' });
             resourceList.bindItems({
               path:'/',
               template: new sap.m.CustomListItem({
@@ -755,7 +825,8 @@
               })
             });
             resourceList.setModel(new sap.ui.model.json.JSONModel(resources.map(res=>({ label: res.label || res.name || 'Ressource', type: res.type || '', url: res.url || '' }))));
-            sections.push(resourceList);
+            const resourcePanel = detailPanel('Ressourcen & Anhänge', 'sap-icon://attachment', [ resourceList ]);
+            if (resourcePanel) { sections.push(resourcePanel); }
           }
 
           return sections;
@@ -774,8 +845,9 @@
 
           const sections = [];
           const summary = String(update.summary || '').trim();
+          const overviewControls = [];
           if (summary){
-            sections.push(new sap.m.MessageStrip({
+            overviewControls.push(new sap.m.MessageStrip({
               text: summary,
               type: 'Information',
               showCloseButton:false,
@@ -784,52 +856,38 @@
           }
 
           const metaContent = [];
-          if (update.category){
-            metaContent.push(new sap.m.ObjectStatus({ text:'Kategorie: ' + update.category, icon:'sap-icon://tags', state:'Information' }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom'));
-          }
+          if (update.category){ metaContent.push(new sap.m.ObjectStatus({ text:'Kategorie: ' + update.category, icon:'sap-icon://tags', state:'Information' })); }
           if (update.priority){
             const prioLower = String(update.priority).toLowerCase();
             const prioState = prioLower==='hoch' ? 'Error' : (prioLower==='mittel' ? 'Warning' : 'Success');
-            metaContent.push(new sap.m.ObjectStatus({ text:'Priorität: ' + update.priority, icon:'sap-icon://favorite', state: prioState }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom'));
+            metaContent.push(new sap.m.ObjectStatus({ text:'Priorität: ' + update.priority, icon:'sap-icon://favorite', state: prioState }));
           }
-          if (update.owner){
-            metaContent.push(new sap.m.ObjectStatus({ text:'Verantwortlich: ' + update.owner, icon:'sap-icon://account', state:'None' }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom'));
-          }
-          if (update.impact){
-            metaContent.push(new sap.m.ObjectStatus({ text:'Betroffene: ' + update.impact, icon:'sap-icon://group', state:'None' }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom'));
-          }
-          if (update.date){
-            metaContent.push(new sap.m.ObjectStatus({ text:'Datum: ' + update.date, icon:'sap-icon://history', state:'None' }).addStyleClass('sapUiTinyMarginEnd sapUiTinyMarginBottom'));
-          }
-          if (metaContent.length){
-            sections.push(new sap.m.FlexBox({
-              wrap:'Wrap',
-              fitContainer:true,
-              alignItems:'Center',
-              justifyContent:'Start',
-              items: metaContent
-            }).addStyleClass('sapUiSmallMarginBottom'));
-          }
+          if (update.owner){ metaContent.push(new sap.m.ObjectStatus({ text:'Verantwortlich: ' + update.owner, icon:'sap-icon://account', state:'None' })); }
+          if (update.impact){ metaContent.push(new sap.m.ObjectStatus({ text:'Betroffene: ' + update.impact, icon:'sap-icon://group', state:'None' })); }
+          if (update.date){ metaContent.push(new sap.m.ObjectStatus({ text:'Datum: ' + update.date, icon:'sap-icon://history', state:'None' })); }
+          if (metaContent.length){ overviewControls.push(new sap.m.Toolbar({ content: metaContent }).addStyleClass('detail-meta sapUiSmallMarginBottom')); }
 
           const narrative = String(update.content || '').trim();
           if (narrative){
-            sections.push(new sap.m.FormattedText({
+            overviewControls.push(new sap.m.FormattedText({
               htmlText: '<div class="detail-section">'+escapeHtml(narrative).replace(/\n/g,'<br>')+'</div>',
               sanitizeContent:true
             }).addStyleClass('sapUiSmallMarginBottom detail-description'));
           }
 
+          const overviewPanel = detailPanel('Überblick', 'sap-icon://notification', overviewControls);
+          if (overviewPanel) { sections.push(overviewPanel); }
+
           if (tags.length){
             const tokenizer = new sap.m.Tokenizer({ editable:false, width:'100%' });
             tags.forEach(tag=> tokenizer.addToken(new sap.m.Token({ key: tag, text: tag })));
-            sections.push(new sap.m.VBox({
-              width:'100%',
-              items:[ new sap.m.Label({ text:'Tags' }), tokenizer ]
-            }).addStyleClass('sapUiSmallMarginBottom'));
+            tokenizer.addStyleClass('detail-tokenizer');
+            const tagPanel = detailPanel('Tags', 'sap-icon://tag', [ tokenizer ]);
+            if (tagPanel) { sections.push(tagPanel); }
           }
 
           if (actionItems.length){
-            const actionList = new sap.m.List({ headerText:'Maßnahmen & Aufgaben', inset:false, mode:'None' });
+            const actionList = new sap.m.List({ inset:false, showSeparators:'Inner', mode:'None' });
             actionList.bindItems({
               path:'/',
               template: new sap.m.CustomListItem({
@@ -838,10 +896,7 @@
                   alignItems:'Start',
                   items:[
                     new sap.m.VBox({
-                      items:[
-                        new sap.m.Title({ text:'{title}' }),
-                        new sap.m.Text({ text:{ path:'detail', formatter:function(v){ return v ? v : ''; } }, wrapping:true })
-                      ]
+                      items:[ new sap.m.Title({ text:'{title}' }), new sap.m.Text({ text:{ path:'detail', formatter:function(v){ return v ? v : ''; } }, wrapping:true }) ]
                     }),
                     new sap.m.ObjectStatus({
                       text:{ path:'dueAt', formatter:function(val){ return val ? ('Fällig: ' + fmt.dueText(val)) : 'Termin offen'; } },
@@ -857,11 +912,12 @@
               dueAt: item.dueAt || ''
             }));
             actionList.setModel(new sap.ui.model.json.JSONModel(actionData));
-            sections.push(actionList);
+            const actionPanel = detailPanel('Maßnahmen & Aufgaben', 'sap-icon://task', [ actionList ]);
+            if (actionPanel) { sections.push(actionPanel); }
           }
 
           if (attachments.length){
-            const attachmentList = new sap.m.List({ headerText:'Anhänge', inset:false, mode:'None' });
+            const attachmentList = new sap.m.List({ inset:false, showSeparators:'Inner', mode:'None' });
             attachmentList.bindItems({
               path:'/',
               template: new sap.m.CustomListItem({
@@ -881,7 +937,8 @@
               })
             });
             attachmentList.setModel(new sap.ui.model.json.JSONModel(attachments.map(att=>({ label: att.name || att.label || 'Anhang', type: att.type || '', url: att.url || '' }))));
-            sections.push(attachmentList);
+            const attachmentPanel = detailPanel('Anhänge', 'sap-icon://paperclip', [ attachmentList ]);
+            if (attachmentPanel) { sections.push(attachmentPanel); }
           }
 
           return sections;
@@ -889,54 +946,59 @@
 
         function buildEventDetailContent(event){
           if (!event || typeof event !== 'object') { return []; }
-          const arr = [];
+          const sections = [];
           const description = String(event.description || '').trim();
+
+          const overviewControls = [];
           if (description){
-            arr.push(new sap.m.FormattedText({
+            overviewControls.push(new sap.m.FormattedText({
               htmlText: '<div class="detail-section">'+escapeHtml(description).replace(/\n/g,'<br>')+'</div>',
               sanitizeContent:true
             }).addStyleClass('sapUiSmallMarginBottom detail-description'));
           }
           const meta = [];
-          if (event.date){
-            meta.push(new sap.m.ObjectStatus({ text:'Termin: ' + event.date, icon:'sap-icon://calendar', state:'Information' }).addStyleClass('sapUiTinyMarginEnd'));
-          }
-          if (event.location){
-            meta.push(new sap.m.ObjectStatus({ text:'Ort: ' + event.location, icon:'sap-icon://map-2', state:'None' }).addStyleClass('sapUiTinyMarginEnd'));
-          }
-          if (event.responsible){
-            meta.push(new sap.m.ObjectStatus({ text:'Verantwortlich: ' + event.responsible, icon:'sap-icon://badge', state:'None' }).addStyleClass('sapUiTinyMarginEnd'));
-          }
-          if (meta.length){
-            arr.push(new sap.m.Toolbar({ content: meta }).addStyleClass('sapUiSmallMarginBottom'));
-          }
+          if (event.date){ meta.push(new sap.m.ObjectStatus({ text:'Termin: ' + event.date, icon:'sap-icon://calendar', state:'Information' })); }
+          const location = event.location || event.place || '';
+          if (location){ meta.push(new sap.m.ObjectStatus({ text:'Ort: ' + location, icon:'sap-icon://map-2', state:'None' })); }
+          const responsible = event.responsible || event.owner || '';
+          if (responsible){ meta.push(new sap.m.ObjectStatus({ text:'Verantwortlich: ' + responsible, icon:'sap-icon://badge', state:'None' })); }
+          if (meta.length){ overviewControls.push(new sap.m.Toolbar({ content: meta }).addStyleClass('detail-meta sapUiSmallMarginBottom')); }
+          const overviewPanel = detailPanel('Überblick', 'sap-icon://event', overviewControls);
+          if (overviewPanel) { sections.push(overviewPanel); }
+
           if (Array.isArray(event.checklist) && event.checklist.length){
-            const checklist = new sap.m.List({ headerText:'Checkliste', inset:false });
+            const checklist = new sap.m.List({ inset:false, showSeparators:'Inner' });
             checklist.bindItems({
               path:'/',
-              template: new sap.m.StandardListItem({
-                title:'{title}',
-                description:'{detail}',
-                icon:'sap-icon://accept',
-                iconDensityAware:false
+              template: new sap.m.CustomListItem({
+                content:[ new sap.m.HBox({
+                  alignItems:'Start',
+                  justifyContent:'SpaceBetween',
+                  items:[
+                    new sap.m.VBox({ items:[ new sap.m.Title({ text:'{title}' }), new sap.m.Text({ text:'{detail}', wrapping:true }) ] }),
+                    new sap.ui.core.Icon({ src:'sap-icon://accept', decorative:false, color:'Positive' })
+                  ]
+                }) ]
               })
             });
-            checklist.setModel(new sap.ui.model.json.JSONModel(event.checklist.map(item=>({ title: item.title || item, detail: item.detail || '' }))));
-            arr.push(checklist);
+            const checklistData = event.checklist.map(item=>({ title: item.title || item, detail: item.detail || '' }));
+            checklist.setModel(new sap.ui.model.json.JSONModel(checklistData));
+            const checklistPanel = detailPanel('Checkliste', 'sap-icon://list', [ checklist ]);
+            if (checklistPanel) { sections.push(checklistPanel); }
           }
+
           if (Array.isArray(event.participants) && event.participants.length){
-            const participants = new sap.m.List({ headerText:'Teilnehmende', inset:false });
+            const participants = new sap.m.List({ inset:false, showSeparators:'Inner' });
             participants.bindItems({
               path:'/',
-              template: new sap.m.StandardListItem({
-                title:'{name}',
-                info:'{role}'
-              })
+              template: new sap.m.StandardListItem({ title:'{name}', info:'{role}' })
             });
             participants.setModel(new sap.ui.model.json.JSONModel(event.participants.map(p=>({ name: p.name || p, role: p.role || '' }))));
-            arr.push(participants);
+            const participantPanel = detailPanel('Teilnehmende', 'sap-icon://group', [ participants ]);
+            if (participantPanel) { sections.push(participantPanel); }
           }
-          return arr;
+
+          return sections.length ? sections : [ new sap.m.Text({ text:'Keine Detailinformationen verfügbar.' }) ];
         }
 
         function makeSimpleTab(cfg){
@@ -1145,7 +1207,50 @@
             const s = cal.getSelectedDates()[0]; if (!s) return; updateForDate(s.getStartDate());
           });
           list.bindItems({ path:'c>/items', template: new sap.m.StandardListItem({ title:'{c>title}', description:'{c>type}', info:'{c>time}' }) });
-          const vbox = new sap.m.VBox({ items:[ cal, list ]});
+          const calendarBox = new sap.m.VBox({ items:[ cal ] });
+          calendarBox.setLayoutData(new sap.m.FlexItemData({ growFactor: 0 }));
+          calendarBox.addStyleClass('calendar-box');
+
+          const heroTitle = new sap.m.Title({
+            text: '{= ${/events/0/title} ? "Highlight: " + ${/events/0/title} : "Aktionstage im Blick" }',
+            level: 'H4'
+          }).addStyleClass('sapUiTinyMarginBottom');
+          const heroSubtitle = new sap.m.Text({
+            text: '{= ${/events/0/date} ? "Nächster Termin: " + ${/events/0/date} : "Plane rechtzeitig Ressourcen und Team." }'
+          }).addStyleClass('sapUiTinyMarginBottom');
+          const heroHint = new sap.m.Text({ text: 'Tipp: Nutze den Kalender für Personaleinsatz und Kampagnenplanung.' });
+
+          const heroContent = new sap.m.VBox({
+            alignItems:'Start',
+            justifyContent:'End',
+            width:'100%',
+            height:'100%',
+            items:[
+              new sap.m.ObjectStatus({ text:'Kalender Insight', state:'Success' }).addStyleClass('sapUiTinyMarginBottom'),
+              heroTitle,
+              heroSubtitle,
+              heroHint
+            ]
+          }).addStyleClass('calendar-visual__content');
+
+          const visualPanel = new sap.m.Panel({
+            backgroundDesign:'Transparent',
+            width:'100%',
+            content:[ heroContent ]
+          });
+          visualPanel.setLayoutData(new sap.m.FlexItemData({ growFactor: 1 }));
+          visualPanel.addStyleClass('calendar-visual');
+
+          const topRow = new sap.m.FlexBox({
+            width:'100%',
+            wrap:'Wrap',
+            alignItems:'Stretch',
+            justifyContent:'SpaceBetween',
+            items:[ calendarBox, visualPanel ]
+          });
+          topRow.addStyleClass('calendar-top');
+
+          const vbox = new sap.m.VBox({ width:'100%', items:[ topRow, list ]});
           // init with today
           setTimeout(()=>{ const d=new Date(); cal.removeAllSelectedDates(); cal.addSelectedDate(new sap.ui.unified.DateRange({ startDate:d })); updateForDate(d); }, 0);
           return vbox;

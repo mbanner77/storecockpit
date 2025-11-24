@@ -88,6 +88,29 @@ window.APP_DATA = {
       content:
         "Bitte beachten: Aktualisierte Reinigungsvorgaben für Kühlketten ab KW47.",
       date: "Heute, 07:30",
+      category: "Hygiene",
+      priority: "hoch",
+      owner: "Sarah Krüger",
+      impact: "Frische & Lager",
+      tags: ["Hygiene", "Compliance"],
+      summary:
+        "Neue Hygiene-Vorgaben ersetzen die bisherige Version 4.1. Umsetzung ist verpflichtend.",
+      actionItems: [
+        {
+          title: "Checkliste Version 4.2 aushängen",
+          detail: "Aushang am Schwarze Brett und Kantine ergänzen.",
+          dueAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+          title: "Team-Briefing dokumentieren",
+          detail: "Teilnehmerliste unterschreiben lassen und Foto der Präsentation ergänzen.",
+          dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        },
+      ],
+      attachments: [
+        { name: "Richtlinie_Kuehlkette_v42.pdf", type: "PDF" },
+        { name: "Schulungsfolien.pptx", type: "PPTX" },
+      ],
     },
     {
       id: 2,
@@ -95,6 +118,26 @@ window.APP_DATA = {
       content:
         "Zentrale stellt Werbematerialien für die Aktion bereit. Bitte prominent platzieren.",
       date: "Gestern, 16:45",
+      category: "Marketing",
+      priority: "mittel",
+      owner: "Daniela Rehm",
+      impact: "Verkauf & Promotionsteam",
+      tags: ["Aktionstag", "Verkauf"],
+      summary:
+        "Frische-Woche läuft kommende Woche – Fokus auf Obst & Gemüse sowie Käsetheke.",
+      actionItems: [
+        {
+          title: "Aufsteller vor Obstbereich platzieren",
+          detail: "LED-Beleuchtung aktivieren und QR-Code prüfen.",
+          dueAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+          title: "Kostprobenliste an Kasse hinterlegen",
+          detail: "Liste mit Allergenen an Kassen A & B entsprechend ablegen.",
+          dueAt: new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString(),
+        },
+      ],
+      attachments: [{ name: "Poster_A1.jpg", type: "Bild" }],
     },
     {
       id: 3,
@@ -102,6 +145,21 @@ window.APP_DATA = {
       content:
         "Geplantes Update am Freitag, 22:00 Uhr. Kurzer Ausfall möglich.",
       date: "Gestern, 09:15",
+      category: "IT",
+      priority: "niedrig",
+      owner: "IT-Support Retail",
+      impact: "Wareneingang & Inventur",
+      tags: ["IT", "System"],
+      summary:
+        "Nach dem Update stehen neue Plausibilitätsprüfungen zur Verfügung.",
+      actionItems: [
+        {
+          title: "Offene Wareneingänge bis 21:30 verbuchen",
+          detail: "Priorität auf Frische und Tiefkühl, Rest am Folgetag.",
+          dueAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+        },
+      ],
+      attachments: [],
     },
   ],
   guides: [
@@ -130,20 +188,68 @@ window.APP_DATA = {
     {
       id: 1,
       title: "Frische-Woche Start",
-      description: "Promotionsaufbau und Sampling-Station einrichten",
+      description: "Promotionsaufbau und Sampling-Station einrichten. Schwerpunkt: Obst & Gemüse, Käsetheke.",
       date: "Heute",
+      location: "Verkaufsfläche / Eingangsbereich",
+      responsible: "Marketing-Team",
+      checklist: [
+        {
+          title: "Aufsteller platzieren",
+          detail: "Großformatige Banner neben Eingang, Tisch mit Branding.",
+        },
+        {
+          title: "Sampling vorbereiten",
+          detail: "Kostproben mit Allergiehinweisen auszeichnen.",
+        },
+      ],
+      participants: [
+        { name: "Anna Krüger", role: "Teamleitung Frische" },
+        { name: "Luis Becker", role: "Promotion" },
+      ],
     },
     {
       id: 2,
       title: "Loyalty Programm",
-      description: "Extra-Bonus Punkte für Stammkunden",
+      description: "Extra-Bonus Punkte für Stammkunden. Fokus auf App-Push und Kassendisplays.",
       date: "Morgen",
+      location: "Kassenbereich",
+      responsible: "CRM / Kundenbindung",
+      checklist: [
+        {
+          title: "Push-Nachricht freigeben",
+          detail: "Text im HQ-Portal bestätigen lassen.",
+        },
+        {
+          title: "Display Loop aktualisieren",
+          detail: "Kassendisplay-Playlist auf Campaign-Ordner wechseln.",
+        },
+      ],
+      participants: [
+        { name: "Mila Sommer", role: "CRM Managerin" },
+        { name: "Tim Riedl", role: "IT Support" },
+      ],
     },
     {
       id: 3,
       title: "Black Friday Vorbereitung",
-      description: "Teambriefing und Nachbestellungen",
+      description: "Teambriefing und Nachbestellungen. Fokusartikel: Technik-Gadgets und Haushaltsgeräte.",
       date: "In 3 Tagen",
+      location: "Backoffice Konfi-Raum",
+      responsible: "Filialleitung",
+      checklist: [
+        {
+          title: "Briefing Agenda finalisieren",
+          detail: "Verkaufsziele, Personalplanung, Servicepunkte.",
+        },
+        {
+          title: "Nachbestellungen prüfen",
+          detail: "Top 20 Artikel mit Distribution abstimmen.",
+        },
+      ],
+      participants: [
+        { name: "Svenja Adler", role: "Filialleitung" },
+        { name: "Kevin Otto", role: "Schichtleiter" },
+      ],
     },
   ],
 };
