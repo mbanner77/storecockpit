@@ -78,6 +78,67 @@
         gap: 0.5rem;
         color: #0a1f44;
       }
+      .calendar-visual__list {
+        width: 100%;
+      }
+      .calendar-visual__list .sapMLIB {
+        background: rgba(255,255,255,0.82);
+        border-radius: 0.6rem;
+        margin-bottom: 0.4rem;
+        box-shadow: 0 4px 12px rgba(9, 30, 66, 0.08);
+        padding: 0.5rem 0.85rem;
+      }
+      .calendar-visual__list .sapMLIB:last-child {
+        margin-bottom: 0;
+      }
+      .calendar-visual__list-title {
+        font-weight: 600;
+      }
+      .calendar-visual__list-sub {
+        font-size: 0.85rem;
+        color: #4f5d78;
+      }
+      .kanban {
+        background: linear-gradient(135deg, rgba(241,245,255,0.95), rgba(229,240,255,0.9)), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Ccircle cx='80' cy='80' r='60' fill='none' stroke='rgba(10,110,209,0.08)' stroke-width='2'/%3E%3Ccircle cx='10' cy='10' r='4' fill='rgba(10,110,209,0.08)'/%3E%3Ccircle cx='140' cy='140' r='6' fill='rgba(10,110,209,0.05)'/%3E%3C/svg%3E");
+        background-size: cover;
+        padding: 1.5rem;
+        border-radius: 1rem;
+        gap: 1rem;
+      }
+      .kanban-col {
+        background: rgba(255,255,255,0.94);
+        border-radius: 0.9rem;
+        padding: 0.75rem;
+        box-shadow: 0 12px 24px rgba(9, 30, 66, 0.12);
+      }
+      .kanban-col .sapMList {
+        background: transparent;
+      }
+      .tab-decor {
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(180deg, rgba(243,246,255,0.9) 0%, rgba(255,255,255,0.96) 70%);
+        border-radius: 1rem;
+        padding: 1.5rem;
+        box-shadow: 0 10px 26px rgba(9, 30, 66, 0.08);
+      }
+      .tab-decor--updates::before,
+      .tab-decor--guides::before,
+      .tab-decor--events::before {
+        content: "";
+        display: block;
+        width: 100%;
+        height: 120px;
+        border-radius: 0.8rem;
+        margin-bottom: 1rem;
+        background: linear-gradient(135deg, rgba(10,110,209,0.12), rgba(10,110,209,0));
+      }
+      .tab-decor--guides::before {
+        background: linear-gradient(135deg, rgba(76,175,80,0.12), rgba(76,175,80,0));
+      }
+      .tab-decor--events::before {
+        background: linear-gradient(135deg, rgba(255,143,0,0.14), rgba(255,143,0,0));
+      }
     </style>
   </head>
   <body class="sapUiBody sapUiSizeCompact" id="content">
@@ -101,6 +162,7 @@
       });
       sap.ui.getCore().attachInit(async function() {
         const api = (window.AppConfig && window.AppConfig.apiBaseUrl) || '';
+        let isOfflineApi = false;
         let authToken = localStorage.getItem('demo_token') || '';
         let adminSettings = {};
         const fmt = {
@@ -158,11 +220,21 @@
         async function loadAll(){
           busy.open();
           try {
+            if (!api) { throw new Error('API nicht konfiguriert'); }
+            const [tasksResp, updatesResp, guidesResp, eventsResp] = await Promise.all([
+              fetch(api + '/tasks'),
+              fetch(api + '/updates'),
+              fetch(api + '/guides'),
+              fetch(api + '/events')
+            ]);
+            if (!tasksResp.ok || !updatesResp.ok || !guidesResp.ok || !eventsResp.ok) {
+              throw new Error('API antwortet nicht wie erwartet');
+            }
             const [tasks, updates, guides, events] = await Promise.all([
-              fetch(api + '/tasks').then(r=>r.json()),
-              fetch(api + '/updates').then(r=>r.json()),
-              fetch(api + '/guides').then(r=>r.json()),
-              fetch(api + '/events').then(r=>r.json()),
+              tasksResp.json(),
+              updatesResp.json(),
+              guidesResp.json(),
+              eventsResp.json()
             ]);
             if (tasks && tasks.items) {
               model.setProperty('/tasks', tasks.items);
@@ -182,7 +254,10 @@
             model.setProperty('/updates', updates); model.setProperty('/updatesCount', Array.isArray(updates)? updates.length : (updates.items?updates.items.length:0));
             model.setProperty('/guides', guides); model.setProperty('/guidesCount', Array.isArray(guides)? guides.length : (guides.items?guides.items.length:0));
             model.setProperty('/events', events); model.setProperty('/eventsCount', Array.isArray(events)? events.length : (events.items?events.items.length:0));
+            isOfflineApi = false;
+            model.setProperty('/syncState', { offline:false, message:'' });
           } catch(e){
+            console.warn('Server nicht erreichbar, verwende Demo-Daten.', e);
             const sd = window.APP_DATA || {};
             if (sd.tasks) {
               model.setProperty('/tasks', sd.tasks);
@@ -192,6 +267,8 @@
             model.setProperty('/updates', sd.updates || []); model.setProperty('/updatesCount', (sd.updates||[]).length);
             model.setProperty('/guides', sd.guides || []); model.setProperty('/guidesCount', (sd.guides||[]).length);
             model.setProperty('/events', sd.events || []); model.setProperty('/eventsCount', (sd.events||[]).length);
+            isOfflineApi = true;
+            model.setProperty('/syncState', { offline:true, message:'Demo-Daten aktiv – Backend nicht erreichbar.' });
           } finally { busy.close(); }
         }
         await loadAll();
@@ -202,6 +279,7 @@
         let lastEventCount = Array.isArray(model.getProperty('/events')) ? model.getProperty('/events').length : 0;
         let notifyIntervalId = null;
         async function pollNotifications(){
+          if (isOfflineApi || !api) { return; }
           try{
             const [u, e] = await Promise.all([
               fetch(api + '/updates').then(r=>r.json()),
@@ -228,17 +306,21 @@
         function startNotifyInterval(ms){
           if (notifyIntervalId) { clearInterval(notifyIntervalId); notifyIntervalId = null; }
           const interval = Math.max(15000, Number(ms)||60000);
-          notifyIntervalId = setInterval(pollNotifications, interval);
+          if (!isOfflineApi && api) {
+            notifyIntervalId = setInterval(pollNotifications, interval);
+          }
         }
 
         function authHeaders(){ const h={'Content-Type':'application/json'}; if (authToken) h['Authorization'] = 'Bearer '+authToken; return h; }
         async function fetchComments(taskId){
+          if (isOfflineApi || !api) { return []; }
           try{
             const r = await fetch(api + '/tasks/' + taskId + '/comments');
             return await r.json();
           }catch(e){ console.error(e); return []; }
         }
         async function postComment(taskId, text){
+          if (isOfflineApi || !api) { sap.m.MessageToast.show('Kommentare im Demo-Modus deaktiviert'); return null; }
           try{
             const r = await fetch(api + '/tasks/' + taskId + '/comments', { method:'POST', headers: authHeaders(), body: JSON.stringify({ text, author: (model.getProperty('/role')==='lead'?'Leitung':'Mitarbeiter') }) });
             return await r.json();
@@ -252,6 +334,14 @@
           } catch(e) { console.error(e); }
         }
         async function createTask(payload){
+          if (isOfflineApi || !api) {
+            const arr = model.getProperty('/tasks').slice();
+            const tmp = Object.assign({ id: Date.now(), status:'offen', createdAt: Date.now() }, payload);
+            arr.unshift(tmp);
+            model.setProperty('/tasks', arr);
+            sap.m.MessageToast.show('Demo: Aufgabe lokal hinzugefügt');
+            return;
+          }
           const r = await fetch(api + '/tasks', { method:'POST', headers: authHeaders(), body: JSON.stringify(payload)});
           const t = await r.json();
           const arr = model.getProperty('/tasks').slice(); arr.unshift(t); model.setProperty('/tasks', arr);
@@ -262,6 +352,7 @@
           const idx = arr.findIndex(x=> String(x && x.id) === String(id));
           let updatedTask = null;
           try {
+            if (isOfflineApi || !api) { throw new Error('Offline-Modus aktiv'); }
             const resp = await fetch(api + '/tasks/' + id, { method:'PUT', headers: authHeaders(), body: JSON.stringify(payload)});
             if (!resp.ok) throw new Error('Update fehlgeschlagen: ' + resp.status);
             updatedTask = await resp.json();
@@ -285,6 +376,12 @@
           sap.m.MessageToast.show('Aufgabe gespeichert');
         }
         async function deleteTask(id){
+          if (isOfflineApi || !api) {
+            const arr = model.getProperty('/tasks').slice().filter(x=>String(x.id)!==String(id));
+            model.setProperty('/tasks', arr);
+            sap.m.MessageToast.show('Demo: Aufgabe lokal entfernt');
+            return;
+          }
           await fetch(api + '/tasks/' + id, { method:'DELETE', headers: authHeaders() });
           const arr = model.getProperty('/tasks').slice().filter(x=>x.id!==id); model.setProperty('/tasks', arr);
           sap.m.MessageToast.show('Aufgabe gelöscht');
