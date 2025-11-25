@@ -92,6 +92,18 @@
       .calendar-visual__list .sapMLIB:last-child {
         margin-bottom: 0;
       }
+      /* Card look used in Intelli tab */
+      .rc-card {
+        background: rgba(255,255,255,0.94);
+        border: 1px solid #d0dae6;
+        border-radius: 0.75rem;
+        box-shadow: 0 8px 20px rgba(9, 30, 66, 0.08);
+        overflow: hidden;
+      }
+      .rc-card .sapMPanelHdr { padding: 0.5rem 0.75rem; }
+      .rc-card .sapMPanelContent { padding: 0.25rem 0.25rem; }
+      .rc-card .sapMLIB { border: none; }
+      .rc-card .sapMLIB:hover { background: rgba(10,110,209,0.04); }
       .calendar-visual__list-title {
         font-weight: 600;
       }
@@ -1897,6 +1909,7 @@
               new sap.m.Column({ header:new sap.m.Label({ text:'Beleg' }) }),
               new sap.m.Column({ header:new sap.m.Label({ text:'Belegart' }) }),
               new sap.m.Column({ header:new sap.m.Label({ text:'Herkunft' }) }),
+              new sap.m.Column({ header:new sap.m.Label({ text:'Lieferant/Werk' }) }),
               new sap.m.Column({ header:new sap.m.Label({ text:'Warengruppe' }) }),
               new sap.m.Column({ header:new sap.m.Label({ text:'Aktion' }) }),
               new sap.m.Column({ header:new sap.m.Label({ text:'Stichtag' }) }),
@@ -1911,6 +1924,23 @@
           function catText(t){ const s=Array.isArray(t&&t.tags)? t.tags.join(',').toLowerCase(): String((t&&t.tags)||'').toLowerCase(); if (s.includes('frische')) return 'Frische'; if (s.includes('tk')||s.includes('tiefkühl')||s.includes('kühl')) return 'Tiefkühlware'; return 'sonstige'; }
           function isPromo(t){ return (t && t.sourceDoc && t.sourceDoc.type)==='PROMO'; }
           function prioOrder(p){ return p==='hoch'?1:(p==='mittel'?2:3); }
+          function supplierPlantText(t){
+            try{
+              const tp=(t && t.sourceDoc && t.sourceDoc.type)||'';
+              const plant = t && (t.plant||t.werks||'');
+              if (tp==='STO'){
+                const supPlant = t && (t.supplyingPlant||t.versandwerk||'');
+                return (supPlant? ('Versandwerk '+supPlant) : 'Versandwerk –') + (plant? (' → Werk '+plant):'');
+              }
+              const lifnr = t && (t.lifnr||'');
+              const name = t && (t.supplierName||t.name1||'');
+              let s = '';
+              if (lifnr) s += 'LIFNR ' + lifnr;
+              if (name) s += (s? ' • ' : '') + name;
+              if (plant) s += (s? ' • ' : '') + 'Werk ' + plant;
+              return s || '—';
+            }catch(_){ return '—'; }
+          }
 
           const template = new sap.m.ColumnListItem({
             cells:[
@@ -1918,6 +1948,7 @@
               new sap.m.ObjectIdentifier({ title:{ parts:['sourceDoc/id'], formatter:function(id){ return id||'—'; } }, text:'{title}' }),
               new sap.m.ObjectStatus({ text:{ parts:['sourceDoc/type'], formatter:function(t){ return t||'—'; } }, state:'None' }),
               new sap.m.Text({ text:{ path:'.', formatter: originText } }),
+              new sap.m.Text({ text:{ path:'.', formatter: supplierPlantText } }),
               new sap.m.ObjectStatus({ text:{ path:'.', formatter: catText }, state:{ path:'priority', formatter: fmt.prioState } }),
               new sap.m.ObjectStatus({ text:{ path:'.', formatter:function(t){ return isPromo(t)? 'Ja':'Nein'; } }, state:'None' }),
               new sap.m.Text({ text:{ path:'dueAt', formatter: fmt.dueText } }),
