@@ -258,8 +258,29 @@
               if (t.includes('kalender')||t.includes('event')) return 'https://images.unsplash.com/photo-1511578314322-379afb476865?w=256&q=40&auto=format&fit=crop';
             }catch(_){/* ignore */}
             return 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=256&q=40&auto=format&fit=crop';
+          },
+          processLabel: function(p){
+            if (p==='we') return 'Wareneingang';
+            if (p==='aktion') return 'Aktion';
+            if (p==='frische') return 'Frische';
+            if (p==='qm') return 'Qualitätsmeldung';
+            if (p==='inventur') return 'Inventur';
+            return p||'Prozess';
+          },
+          completionLabel: function(a){
+            if (a==='POST_GR') return 'WE buchen';
+            if (a==='CREATE_QM_NOTIFICATION') return 'QM-Meldung anlegen';
+            if (a==='COMPLETE_PROMO') return 'Aktion abschließen';
+            return 'Keine Buchung';
           }
         };
+
+        function processToAction(proc){
+          if (proc==='we') return 'POST_GR';
+          if (proc==='qm') return 'CREATE_QM_NOTIFICATION';
+          if (proc==='aktion') return 'COMPLETE_PROMO';
+          return 'NONE';
+        }
 
         const model = new sap.ui.model.json.JSONModel({
           role: initialRole,
@@ -619,6 +640,29 @@
           await fetch(api + '/tasks/' + id, { method:'DELETE', headers: authHeaders() });
           const arr = model.getProperty('/tasks').slice().filter(x=>x.id!==id); model.setProperty('/tasks', arr);
           sap.m.MessageToast.show('Aufgabe gelöscht');
+        }
+
+        async function mockCompleteTask(task){
+          try{
+            const proc = (task && task.processType) || '';
+            const action = (task && task.completionAction) || processToAction(proc);
+            const docType = task && task.sourceDoc && task.sourceDoc.type || '';
+            const docId = task && task.sourceDoc && task.sourceDoc.id || '';
+            const dialogInfo = new sap.m.VBox({ width:'100%', items:[
+              new sap.m.ObjectStatus({ text:'Prozess: ' + (fmt.processLabel(proc)||'–'), icon:'sap-icon://process', state:'None' }),
+              new sap.m.ObjectStatus({ text:'Beleg: ' + (docType||'–') + (docId? (' • ' + docId):''), icon:'sap-icon://document', state:'None' }),
+              new sap.m.ObjectStatus({ text:'Aktion: ' + fmt.completionLabel(action), icon:'sap-icon://accept', state:'Information' })
+            ]});
+            const confirmDlg = new sap.m.Dialog({ title:'Vorgang abschließen', type:'Message', content:[ dialogInfo ], beginButton: new sap.m.Button({ text:'Ausführen (Mock)', type:'Emphasized', press: async ()=>{
+              confirmDlg.close();
+              busy.open();
+              try{
+                await updateTask(task.id, { status:'abgeschlossen', completedAt: new Date().toISOString(), lastPostStatus:'success', lastPostMessage:'Mock: ' + fmt.completionLabel(action) });
+                sap.m.MessageToast.show('Vorgang abgeschlossen (Mock)');
+              } finally { busy.close(); }
+            } }), endButton: new sap.m.Button({ text:'Abbrechen', press: ()=> confirmDlg.close() }) });
+            confirmDlg.open();
+          }catch(e){ console.error(e); sap.m.MessageToast.show('Abschluss fehlgeschlagen (Mock)'); }
         }
 
         function taskSorter(){
@@ -986,6 +1030,28 @@
           const f = buildTaskForm({});
           let heroImg = new sap.m.Image({ src:'', decorative:true, width:'100%', height:'160px', visible:false }).addStyleClass('detail-hero sapUiSmallMarginBottom');
           const imgInput = new sap.m.Input({ value:'', placeholder:'Bild-URL (optional)', liveChange:(e)=>{ const v = e.getParameter('value'); if (v){ heroImg.setSrc(v); heroImg.setVisible(true); } else { heroImg.setVisible(false); } } });
+          const procSel = new sap.m.Select({ width:'100%', items:[
+            new sap.ui.core.Item({ key:'', text:'Prozess wählen' }),
+            new sap.ui.core.Item({ key:'we', text:'Wareneingang' }),
+            new sap.ui.core.Item({ key:'aktion', text:'Aktion' }),
+            new sap.ui.core.Item({ key:'frische', text:'Frische' }),
+            new sap.ui.core.Item({ key:'qm', text:'Qualitätsmeldung' }),
+            new sap.ui.core.Item({ key:'inventur', text:'Inventur' })
+          ]});
+          const srcTypeSel = new sap.m.Select({ width:'100%', items:[
+            new sap.ui.core.Item({ key:'', text:'Belegart wählen' }),
+            new sap.ui.core.Item({ key:'DELIVERY', text:'Lieferschein' }),
+            new sap.ui.core.Item({ key:'PO', text:'Bestellung' }),
+            new sap.ui.core.Item({ key:'PROMO', text:'Aktion' }),
+            new sap.ui.core.Item({ key:'QMNOTIF', text:'QM-Meldung' })
+          ]});
+          const srcIdInput = new sap.m.Input({ value:'', placeholder:'Belegnummer / Referenz' });
+          const compPreview = new sap.m.ObjectStatus({ text:'{= "Buchung: " + ${/tmpCompLabel} }', state:'None' });
+          const tmpModel = new sap.ui.model.json.JSONModel({ comp: 'NONE', compLabel: fmt.completionLabel('NONE') });
+          compPreview.bindText('/tmpCompLabel');
+          function syncComp(){ const a=processToAction(procSel.getSelectedKey()); tmpModel.setProperty('/tmpComp', a); tmpModel.setProperty('/tmpCompLabel', fmt.completionLabel(a)); }
+          procSel.attachChange(syncComp);
+          syncComp();
           const templateSel = new sap.m.Select({ width:'100%', items: TEMPLATES.map(t=> new sap.ui.core.Item({ key:t.key, text:t.text })), change:(e)=>{ applyTemplateToForm(e.getSource().getSelectedKey(), f); } });
           const form = new sap.ui.layout.form.SimpleForm({ editable:true, layout:'ResponsiveGridLayout', labelSpanXL:3, labelSpanL:3, labelSpanM:4, adjustLabelSpan:false, content:[
             new sap.m.Label({text:'Vorlage'}), templateSel,
@@ -995,13 +1061,17 @@
             new sap.m.Label({text:'Status'}), f.status,
             new sap.m.Label({text:'Fällig bis'}), f.due,
             new sap.m.Label({text:'Tags'}), f.tagsInput,
+            new sap.m.Label({text:'Prozess'}), procSel,
+            new sap.m.Label({text:'Belegart'}), srcTypeSel,
+            new sap.m.Label({text:'Belegnummer'}), srcIdInput,
+            new sap.m.Label({text:'Buchung'}), compPreview,
             new sap.m.Label({text:'Bild URL'}), imgInput
           ]});
           dlg = new sap.m.Dialog({ contentWidth:'640px', contentHeight:'auto', stretchOnPhone:true, content:[ heroImg, form ],
             customHeader: new sap.m.Bar({ contentLeft:[ new sap.ui.core.Icon({ src:'sap-icon://add', color:'AccentColor1' }), new sap.m.Title({ text:'Neue Aufgabe' }) ], contentRight:[ new sap.m.Button({ icon:'sap-icon://decline', tooltip:'Schließen', press: ()=>dlg.close() }) ] }),
             beginButton: new sap.m.Button({ text:'Speichern', type:'Emphasized', press: async ()=>{
             if (!f.title.getValue()){ f.title.setValueState('Error'); return; }
-            await createTask({ title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue(), tags: f.tagsInput.getValue(), image: imgInput.getValue() });
+            await createTask({ title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue(), tags: f.tagsInput.getValue(), image: imgInput.getValue(), processType: procSel.getSelectedKey(), sourceDoc:{ type: srcTypeSel.getSelectedKey(), id: srcIdInput.getValue() }, completionAction: processToAction(procSel.getSelectedKey()) });
             dlg.close(); dlg.destroy();
           }}), endButton: new sap.m.Button({ text:'Abbrechen', press: ()=>{ dlg.close(); dlg.destroy(); } }) });
           dlg.open();
@@ -1020,7 +1090,8 @@
 
           const footer = new sap.m.HBox({ justifyContent:'SpaceBetween', width:'100%', items:[
             new sap.m.Button({ text:'Löschen', type:'Reject', visible: canDelete, press: async ()=>{ await deleteTask(task.id); dlg.close(); dlg.destroy(); } }),
-            new sap.m.Button({ text:'Speichern', type:'Emphasized', press: async ()=>{ if (!f.title.getValue()){ f.title.setValueState('Error'); return; } await updateTask(task.id, { title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue(), tags: f.tagsInput.getValue(), image: imgInputEdit.getValue() }); dlg.close(); dlg.destroy(); } })
+            new sap.m.Button({ text:'Vorgang abschließen (Mock)', type:'Emphasized', visible: model.getProperty('/canPlanTasks') || model.getProperty('/canAccessAdmin'), press: async ()=>{ await mockCompleteTask(task); dlg.close(); dlg.destroy(); } }),
+            new sap.m.Button({ text:'Speichern', type:'Default', press: async ()=>{ if (!f.title.getValue()){ f.title.setValueState('Error'); return; } await updateTask(task.id, { title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue(), tags: f.tagsInput.getValue(), image: imgInputEdit.getValue() }); dlg.close(); dlg.destroy(); } })
           ]});
 
           const form = new sap.ui.layout.form.SimpleForm({ editable:true, layout:'ResponsiveGridLayout', labelSpanXL:3, labelSpanL:3, labelSpanM:4, adjustLabelSpan:false, content:[
@@ -1030,6 +1101,10 @@
             new sap.m.Label({text:'Status'}), f.status,
             new sap.m.Label({text:'Fällig bis'}), f.due,
             new sap.m.Label({text:'Tags'}), f.tagsInput,
+            new sap.m.Label({text:'Prozess'}), new sap.m.Select({ selectedKey: (task && task.processType)||'', items:[ new sap.ui.core.Item({ key:'', text:'Prozess wählen' }), new sap.ui.core.Item({ key:'we', text:'Wareneingang' }), new sap.ui.core.Item({ key:'aktion', text:'Aktion' }), new sap.ui.core.Item({ key:'frische', text:'Frische' }), new sap.ui.core.Item({ key:'qm', text:'Qualitätsmeldung' }), new sap.ui.core.Item({ key:'inventur', text:'Inventur' }) ] }),
+            new sap.m.Label({text:'Belegart'}), new sap.m.Input({ value: (task && task.sourceDoc && task.sourceDoc.type) || '', placeholder:'z. B. DELIVERY, PO, PROMO' }),
+            new sap.m.Label({text:'Belegnummer'}), new sap.m.Input({ value: (task && task.sourceDoc && task.sourceDoc.id) || '', placeholder:'z. B. 8000..., 45...' }),
+            new sap.m.Label({text:'Buchung'}), new sap.m.ObjectStatus({ text: (task && task.completionAction) ? ('Buchung: ' + fmt.completionLabel(task.completionAction)) : 'Buchung: Keine', state:'None' }),
             new sap.m.Label({text:'Bild URL'}), imgInputEdit
           ]});
 
