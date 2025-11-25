@@ -37,6 +37,7 @@
         line-height: 1.55;
         font-size: 0.95rem;
       }
+      .detail-section img { max-width: 100%; height: auto; border-radius: 0.5rem; }
       .detail-summary {
         border-left: 4px solid #0a6ed1;
       }
@@ -139,6 +140,57 @@
       .tab-decor--events::before {
         background: linear-gradient(135deg, rgba(255,143,0,0.14), rgba(255,143,0,0));
       }
+      .role-selector {
+        margin-top: 0.5rem;
+      }
+      .role-selector .sapMLIB {
+        border-radius: 0.75rem;
+        margin-bottom: 0.5rem;
+        border: 1px solid transparent;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+        box-shadow: 0 2px 8px rgba(9, 30, 66, 0.08);
+        background: rgba(255,255,255,0.96);
+        width: 100%;
+        box-sizing: border-box;
+        overflow: hidden;
+      }
+      .role-selector .sapMLIB:hover {
+        border-color: #0a6ed1;
+        box-shadow: 0 6px 16px rgba(9, 30, 66, 0.12);
+        transform: translateY(-2px);
+      }
+      .role-selector .sapMLIB.sapMLIBSelected {
+        border-color: #0a6ed1;
+        box-shadow: 0 6px 18px rgba(10, 110, 209, 0.2);
+      }
+      .role-selector__item {
+        align-items: center;
+        gap: 1rem;
+        padding: 0.75rem 1rem;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .role-selector__icon {
+        color: #0a6ed1;
+      }
+      .role-selector__title {
+        font-weight: 600;
+        font-size: 1.05rem;
+        color: #0a1f44;
+      }
+      .role-selector__desc {
+        font-size: 0.9rem;
+        color: #5f6b7a;
+        margin-top: 0.25rem;
+      }
+      .app-header__logo {
+        height: 32px;
+        margin-right: 0.75rem;
+      }
+      .app-header__title {
+        color: #0a1f44;
+        font-weight: 600;
+      }
     </style>
   </head>
   <body class="sapUiBody sapUiSizeCompact" id="content">
@@ -165,6 +217,18 @@
         let isOfflineApi = false;
         let authToken = localStorage.getItem('demo_token') || '';
         let adminSettings = {};
+        let bulkDeleteBtn;
+        let list;
+        const ROLE_METADATA = {
+          lead: { key:'lead', label:'Filialleiter', description:'Plant Aufgaben und steuert das Team.', icon:'sap-icon://manager' },
+          staff: { key:'staff', label:'Mitarbeiter', description:'Kann Aufgaben ausführen und kommentieren.', icon:'sap-icon://employee' },
+          admin: { key:'admin', label:'Admin', description:'Hat exklusiven Zugriff auf den Admin-Bereich.', icon:'sap-icon://shield' }
+        };
+        const ROLE_OPTIONS = Object.keys(ROLE_METADATA);
+        let storedRole = '';
+        try { storedRole = localStorage.getItem('taskcenter_role') || ''; } catch(_){ storedRole = ''; }
+        const initialRole = ROLE_OPTIONS.includes(storedRole) ? storedRole : '';
+
         const fmt = {
           overdue: function(dueAt){
             if (!dueAt) return false;
@@ -173,7 +237,12 @@
           dueText: function(dueAt){
             if (!dueAt) return '';
             const d = new Date(dueAt);
-            return d.toLocaleString('de-DE');
+            if (!Number.isFinite(d.getTime())) return '';
+            return d.toLocaleString();
+          },
+          roleLabel: function(role){
+            const meta = ROLE_METADATA[role];
+            return meta ? meta.label : 'Rolle wählen';
           },
           prioState: function(p){ return p==='hoch' ? 'Error' : (p==='mittel' ? 'Warning' : 'Success'); },
           statusState: function(s){ return s==='abgeschlossen' ? 'Success' : (s==='in_arbeit' ? 'Information' : 'None'); },
@@ -182,7 +251,10 @@
         };
 
         const model = new sap.ui.model.json.JSONModel({
-          role: 'lead',
+          role: initialRole,
+          isAuthenticated: Boolean(initialRole),
+          canPlanTasks: initialRole === 'lead',
+          canAccessAdmin: initialRole === 'admin',
           search: '',
           sort: 'created_desc',
           statusFilter: '',
@@ -199,13 +271,163 @@
           }
         });
 
+        function persistRole(role){
+          try {
+            if (role) { localStorage.setItem('taskcenter_role', role); }
+            else { localStorage.removeItem('taskcenter_role'); }
+          } catch(_){/* ignore */}
+        }
+
+        function updateRoleCapabilities(role){
+          const isValid = ROLE_OPTIONS.includes(role);
+          const normalized = isValid ? role : '';
+          if (!isValid && role){
+            model.setProperty('/role', normalized);
+            return;
+          }
+          const authenticated = Boolean(normalized);
+          if (model.getProperty('/isAuthenticated') !== authenticated){
+            model.setProperty('/isAuthenticated', authenticated);
+          }
+          const canPlan = normalized === 'lead';
+          if (model.getProperty('/canPlanTasks') !== canPlan){
+            model.setProperty('/canPlanTasks', canPlan);
+          }
+          const canAccessAdmin = normalized === 'admin';
+          if (model.getProperty('/canAccessAdmin') !== canAccessAdmin){
+            model.setProperty('/canAccessAdmin', canAccessAdmin);
+          }
+          persistRole(normalized);
+        }
+
+        updateRoleCapabilities(initialRole);
+
+        model.attachPropertyChange(function(ev){
+          const path = ev.getParameter('path');
+          if (path === '/role'){
+            updateRoleCapabilities(ev.getSource().getProperty('/role'));
+          }
+          if (path === '/canPlanTasks'){
+            if (typeof syncBulkDeleteVisibility === 'function') syncBulkDeleteVisibility();
+            if (list && typeof updateBulkButtons === 'function') updateBulkButtons();
+          }
+          if (path === '/canAccessAdmin'){
+            if (model.getProperty('/canAccessAdmin')){
+              loadAdminOverview();
+            } else {
+              model.setProperty('/dashboard/summary', { total:0, overdue:0, dueSoon:0, priority:{}, status:{}, tags:[] });
+              model.setProperty('/dashboard/tags', []);
+              model.setProperty('/dashboard/latest', []);
+              model.setProperty('/dashboard/generatedAt', '');
+            }
+          }
+        });
+
+        function openRoleSelectionDialog(opts){
+          const options = opts || {};
+          return new Promise((resolve)=>{
+            let resolved = false;
+            let dialog;
+            const roleList = new sap.m.List({ mode:'SingleSelectMaster', includeItemInSelection:true, width:'100%' });
+            roleList.addStyleClass('role-selector');
+            ROLE_OPTIONS.forEach(roleKey=>{
+              const meta = ROLE_METADATA[roleKey];
+              const item = new sap.m.CustomListItem({
+                type:'Active',
+                selected: model.getProperty('/role') === roleKey,
+                content: [
+                  new sap.m.HBox({
+                    alignItems:'Center',
+                    width:'100%',
+                    items:[
+                      new sap.ui.core.Icon({ src: meta.icon, size:'2rem', decorative:false }).addStyleClass('role-selector__icon'),
+                      new sap.m.VBox({
+                        width:'100%',
+                        items:[
+                          new sap.m.Text({ text: meta.label }).addStyleClass('role-selector__title'),
+                          new sap.m.Text({ text: meta.description }).addStyleClass('role-selector__desc')
+                        ]
+                      })
+                    ]
+                  }).addStyleClass('role-selector__item')
+                ]
+              });
+              item.data('roleKey', roleKey);
+              roleList.addItem(item);
+              if (model.getProperty('/role') === roleKey){
+                roleList.setSelectedItem(item, true);
+              }
+            });
+
+            function chooseRole(roleKey){
+              if (!ROLE_OPTIONS.includes(roleKey)) return;
+              model.setProperty('/role', roleKey);
+              updateRoleCapabilities(roleKey);
+              resolved = true;
+              if (dialog){ dialog.close(); }
+              resolve(roleKey);
+            }
+
+            function handleSelection(item){
+              if (!item) return;
+              roleList.setSelectedItem(item, true);
+              const roleKey = item.data('roleKey');
+              chooseRole(roleKey);
+            }
+
+            roleList.attachSelectionChange(function(e){
+              handleSelection(e.getParameter('listItem'));
+            });
+            roleList.attachItemPress(function(e){
+              handleSelection(e.getParameter('listItem'));
+            });
+
+            const infoText = new sap.m.Text({ text:'Bitte eine Rolle auswählen. Die Auswahl bestimmt die verfügbaren Funktionen.' }).addStyleClass('sapUiSmallMarginBottom');
+            const contentBox = new sap.m.VBox({ width:'100%', items:[ infoText, roleList ] }).addStyleClass('sapUiMediumMargin');
+
+            dialog = new sap.m.Dialog({
+              title:'Anmeldung – Rolle wählen',
+              stretchOnPhone:true,
+              contentWidth:'640px',
+              horizontalScrolling:false,
+              escapeHandler: function(oEvent){ if (options.force && !model.getProperty('/isAuthenticated')) { oEvent.preventDefault(); } else { dialog.close(); } }
+            });
+
+            if (!options.force){
+              dialog.setEndButton(new sap.m.Button({ text:'Abbrechen', press:function(){ dialog.close(); resolve(null); } }));
+            }
+
+            dialog.addContent(contentBox);
+            dialog.attachBeforeClose(function(e){
+              if (options.force && !resolved && !model.getProperty('/isAuthenticated')){
+                e.preventDefault();
+                sap.m.MessageToast.show('Bitte eine Rolle auswählen, um fortzufahren.');
+              }
+            });
+            dialog.attachAfterClose(function(){
+              if (!resolved && options.force && !model.getProperty('/isAuthenticated')){
+                resolve(null);
+              }
+              dialog.destroy();
+            });
+            dialog.open();
+          });
+        }
+
+        async function ensureAuthenticated(){
+          if (model.getProperty('/isAuthenticated')) return;
+          while (!model.getProperty('/isAuthenticated')){
+            await openRoleSelectionDialog({ force:true });
+          }
+        }
+
         const busy = new sap.m.BusyDialog();
         let chipBar; // declared early to avoid TDZ when updateFilterSummary runs before toolbar init
         let needInitialFilterSummary = false;
         // Load admin settings
         try{ adminSettings = JSON.parse(localStorage.getItem('admin_settings')||'{}'); }catch(_){ adminSettings = {}; }
         async function loadAdminOverview(){
-          if (!authToken) return;
+          if (!authToken || !model.getProperty('/canAccessAdmin')) return;
           try {
             const resp = await fetch(api + '/admin/overview', { headers: authHeaders() });
             if (!resp.ok) throw new Error('Admin Überblick fehlgeschlagen');
@@ -271,6 +493,7 @@
             model.setProperty('/syncState', { offline:true, message:'Demo-Daten aktiv – Backend nicht erreichbar.' });
           } finally { busy.close(); }
         }
+        await ensureAuthenticated();
         await loadAll();
         await loadAdminOverview();
         needInitialFilterSummary = true;
@@ -446,7 +669,17 @@
           d.open();
         }
         const headerBar = new sap.m.Bar({
-          contentLeft: [ new sap.m.Title({ text:'Taskcenter (OpenUI5)' }) ],
+          contentLeft: [
+            new sap.m.HBox({
+              alignItems:'Center',
+              items:[
+                new sap.m.Image({ src:'https://realcore.info/bilder/rc-logo.png', decorative:false, tooltip:'RealCore', densityAware:false }).addStyleClass('app-header__logo'),
+                new sap.m.VBox({
+                  items:[ new sap.m.Title({ text:'Taskcenter (OpenUI5)' }).addStyleClass('app-header__title') ]
+                })
+              ]
+            })
+          ],
           contentRight: [
             new sap.m.Button({ icon:'sap-icon://bell', tooltip:'Neuigkeiten', press: openNotify }),
             new sap.m.Button({ icon:'sap-icon://palette', tooltip:'Theme wechseln', press: toggleTheme }),
@@ -537,16 +770,19 @@
           new sap.ui.core.Item({ key:'mittel', text:'Mittel' }),
           new sap.ui.core.Item({ key:'niedrig', text:'Niedrig' })
         ]});
-        const roleBtn = new sap.m.Button({ text: { path:'/role', formatter: function(r){ return r==='lead'? 'Rolle: Leitung' : 'Rolle: Mitarbeiter'; } }, press: ()=>{
-          const r = model.getProperty('/role')==='lead'?'staff':'lead'; model.setProperty('/role', r);
-        }});
-        const addBtn = new sap.m.Button({ text:'Neue Aufgabe', type:'Emphasized', press: openCreateDialog });
+        const roleBtn = new sap.m.Button({
+          text: { path:'/role', formatter: function(r){ return 'Rolle: ' + fmt.roleLabel(r); } },
+          icon: { path:'/role', formatter:function(r){ const meta = ROLE_METADATA[r]; return meta ? meta.icon : 'sap-icon://customer'; } },
+          type:'Transparent',
+          press: ()=>{ openRoleSelectionDialog(); }
+        });
+        const addBtn = new sap.m.Button({ text:'Neue Aufgabe', type:'Emphasized', press: openCreateDialog, enabled:'{/canPlanTasks}' });
 
         // Bulk action buttons
         const bulkCompleteBtn = new sap.m.Button({ text:'Ausgewählte erledigen', icon:'sap-icon://accept', press: onBulkComplete, enabled:false });
-        const bulkDeleteBtn = new sap.m.Button({ text:'Ausgewählte löschen', icon:'sap-icon://delete', type:'Reject', press: onBulkDelete, enabled:false });
-        model.attachPropertyChange(function(e){ if (e.getParameter('path')==='/role'){ bulkDeleteBtn.setVisible(model.getProperty('/role')==='lead'); } });
-        bulkDeleteBtn.setVisible(model.getProperty('/role')==='lead');
+        bulkDeleteBtn = new sap.m.Button({ text:'Ausgewählte löschen', icon:'sap-icon://delete', type:'Reject', press: onBulkDelete, enabled:false });
+        function syncBulkDeleteVisibility(){ bulkDeleteBtn.setVisible(Boolean(model.getProperty('/canPlanTasks'))); }
+        syncBulkDeleteVisibility();
         const exportBtn = new sap.m.Button({ text:'Export', icon:'sap-icon://export', press: onExport });
         const importUploader = new sap.ui.unified.FileUploader({ icon:'sap-icon://upload', buttonOnly:true, sameFilenameAllowed:true, fileType:['json'], change:onImportChange });
 
@@ -628,7 +864,7 @@
         if (needInitialFilterSummary) { updateFilterSummary(); needInitialFilterSummary = false; }
 
         // List & binding with formatter and filters
-        const list = new sap.m.List({ inset:false, mode:'MultiSelect', growing:true, growingScrollToLoad:true, selectionChange:updateBulkButtons });
+        list = new sap.m.List({ inset:false, mode:'MultiSelect', growing:true, growingScrollToLoad:true, selectionChange:updateBulkButtons });
         list.setNoDataText('Keine Aufgaben gefunden. Mit "Neue Aufgabe" kannst du starten.');
         const itemTpl = new sap.m.ObjectListItem({
           title: '{title}',
@@ -642,7 +878,11 @@
 
         // remove client-side filters; server does it
 
-        list.attachItemPress(function(ev){
+        list.attachItemPress(async function(ev){
+          if (!model.getProperty('/isAuthenticated')){
+            await ensureAuthenticated();
+            if (!model.getProperty('/isAuthenticated')) return;
+          }
           const ctx = ev.getParameter('listItem').getBindingContext();
           const t = ctx.getObject();
           openEditDialog(t);
@@ -651,7 +891,7 @@
         function updateBulkButtons(){
           const sel = list.getSelectedItems();
           bulkCompleteBtn.setEnabled(sel.length>0);
-          bulkDeleteBtn.setEnabled(sel.length>0 && model.getProperty('/role')==='lead');
+          bulkDeleteBtn.setEnabled(sel.length>0 && model.getProperty('/canPlanTasks'));
         }
 
         async function onBulkComplete(){
@@ -726,6 +966,10 @@
           formRefs.tagsInput.setValue(d.tags||'');
         }
         function openCreateDialog(){
+          if (!model.getProperty('/canPlanTasks')){
+            sap.m.MessageToast.show('Nur Filialleiter können neue Aufgaben planen.');
+            return;
+          }
           const f = buildTaskForm({});
           const templateSel = new sap.m.Select({ width:'100%', items: TEMPLATES.map(t=> new sap.ui.core.Item({ key:t.key, text:t.text })), change:(e)=>{ applyTemplateToForm(e.getSource().getSelectedKey(), f); } });
           const form = new sap.ui.layout.form.SimpleForm({ editable:true, layout:'ResponsiveGridLayout', labelSpanXL:3, labelSpanL:3, labelSpanM:4, adjustLabelSpan:false, content:[
@@ -748,7 +992,7 @@
         }
         async function openEditDialog(task){
           const f = buildTaskForm(task);
-          const canDelete = model.getProperty('/role')==='lead';
+          const canDelete = model.getProperty('/canPlanTasks');
           const cModel = new sap.ui.model.json.JSONModel({ items: await fetchComments(task.id), text:'' });
           const commentList = new sap.m.List({ headerText:'Kommentare' });
           commentList.bindItems({ path:'c>/items', template: new sap.m.FeedListItem({ text:'{c>text}', sender:'{c>author}', icon:{ path:'c>author', formatter:function(a){ return a&&a.toLowerCase().includes('leitung')? 'sap-icon://manager' : 'sap-icon://employee'; } }, info:{ path:'c>createdAt', formatter: fmt.relative } }) });
@@ -1141,6 +1385,8 @@
             intro: infoProp ? `{${infoProp}}` : '',
             introActive: false,
             number: '',
+            icon: '{image}',
+            iconDensityAware: false,
             attributes:[ new sap.m.ObjectAttribute({ text: `{${descProp}}`, active:false }) ],
             firstStatus: new sap.m.ObjectStatus({ text: infoProp?`{${infoProp}}`:'' , state:'Information' }),
             markers:[ new sap.m.ObjectMarker({ type:'Favorite', visible:{ path:'priority', formatter:(p)=> !!p && p.toLowerCase()==='hoch' } }) ],
@@ -1152,6 +1398,8 @@
             const obj = ev.getParameter('listItem').getBindingContext().getObject();
             let d;
             const titleText = obj && obj[titleProp] ? String(obj[titleProp]) : 'Detail';
+            const bannerUrl = (obj && (obj.image || obj.banner)) || (obj && obj.category && obj.category.toLowerCase()==='promo' ? 'https://images.unsplash.com/photo-1512295767273-ac109ac3acfa?w=1200&q=60' : (obj && obj.type==='event' ? 'https://images.unsplash.com/photo-1511578314322-379afb476865?w=1200&q=60' : ''));
+            const banner = bannerUrl ? new sap.m.Image({ src: bannerUrl, width:'100%', height:'160px', decorative:true }).addStyleClass('sapUiSmallMarginBottom') : new sap.m.Toolbar({ content:[ new sap.m.Title({ text:titleText }) ] });
             const header = new sap.m.Bar({
               contentLeft:[ new sap.m.Title({ text: titleText }) ],
               contentMiddle:[ infoProp && obj && obj[infoProp] ? new sap.m.ObjectStatus({ text: String(obj[infoProp]), state:'Information' }) : new sap.m.Text({ visible:false }) ],
@@ -1166,14 +1414,18 @@
               defaultControls.push(new sap.m.ObjectStatus({ text: String(obj[infoProp]), state:'Information' }));
             }
             const builtControls = detailBuilder ? detailBuilder(obj) : null;
-            const contentItems = Array.isArray(builtControls) && builtControls.length ? builtControls : defaultControls;
+            let contentItems = Array.isArray(builtControls) && builtControls.length ? builtControls : defaultControls;
+            if (!contentItems.length){
+              const illu = new sap.m.IllustratedMessage({ illustrationType:'sapIllus-SceneNoData', title:'Keine Details vorhanden', description:'Für diesen Eintrag liegen derzeit keine weiteren Informationen vor.' });
+              contentItems = [ illu ];
+            }
             const body = new sap.m.ScrollContainer({
               vertical:true,
               focusable:false,
               width:'100%',
-              content: [ new sap.m.VBox({ width:'100%', renderType:'Bare', items: contentItems.length ? contentItems : [ new sap.m.Text({ text:'Keine Details vorhanden.' }) ] }) ]
+              content: [ new sap.m.VBox({ width:'100%', renderType:'Bare', items: (bannerUrl? [ banner ]: []).concat(contentItems.length ? contentItems : [ new sap.m.Text({ text:'Keine Details vorhanden.' }) ]) }) ]
             });
-            d = new sap.m.Dialog({ contentWidth:'720px', contentHeight:'520px', stretchOnPhone:true, draggable:true, resizable:true, customHeader: header, content: [ body ], buttons:[
+            d = new sap.m.Dialog({ contentWidth:'880px', contentHeight:'560px', stretchOnPhone:true, draggable:true, resizable:true, customHeader: header, content: [ body ], buttons:[
               new sap.m.Button({ text:'Als erledigt markieren', type:'Emphasized', visible: cfg && cfg.action === 'update', press: ()=>{ sap.m.MessageToast.show('Demo-Aktion ausgeführt'); } }),
               new sap.m.Button({ text:'Schließen', press: ()=> d.close() })
             ] });
@@ -1374,9 +1626,11 @@
         ]});
 
         const tagCloud = new sap.m.VBox({ items:[ new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Top Tags' }), new sap.m.ToolbarSpacer(), new sap.m.Button({ text:'Aktualisieren', icon:'sap-icon://synchronize', press: loadAdminOverview, tooltip:'Admin Überblick erneut laden' }) ] }), new sap.m.FlexBox({ alignItems:'Start', wrap:'Wrap', items:{ path:'/dashboard/tags', template: new sap.m.ObjectStatus({ text:'{tag} ({count})', state:'None' }).addStyleClass('sapUiSmallMargin') } }) ] });
-        const latestList = new sap.m.List({ headerText:'Neueste Aufgaben (Admin)', visible: { path:'/role', formatter:(r)=> r==='lead' } });
+        tagCloud.bindProperty('visible','/canAccessAdmin');
+        const latestList = new sap.m.List({ headerText:'Neueste Aufgaben (Admin)', visible: { path:'/canAccessAdmin' } });
         latestList.bindItems({ path:'/dashboard/latest', template: new sap.m.StandardListItem({ title:'{title}', description:'{priority} • {status}', info: { path:'dueAt', formatter: fmt.dueText } }) });
         const adminPanel = new sap.m.Panel({ expandable:true, expanded:false, headerText:'Admin Dashboard', headerToolbar: new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Admin Dashboard' }), new sap.m.ToolbarSpacer(), new sap.m.Button({ text:'Demo-Daten hinzufügen', icon:'sap-icon://add-product', type:'Emphasized', press: async ()=>{
+          if (!model.getProperty('/canAccessAdmin')) { sap.m.MessageToast.show('Keine Berechtigung.'); return; }
           if (!authToken) { sap.m.MessageToast.show('Bitte Token setzen'); return; }
           try {
             busy.open();
@@ -1389,6 +1643,7 @@
           } catch(err){ sap.m.MessageToast.show('Seed fehlgeschlagen'); }
           finally { busy.close(); }
         } }), new sap.m.Button({ text:'Zurücksetzen', type:'Reject', icon:'sap-icon://reset', press: async ()=>{
+          if (!model.getProperty('/canAccessAdmin')) { sap.m.MessageToast.show('Keine Berechtigung.'); return; }
           if (!authToken) { sap.m.MessageToast.show('Bitte Token setzen'); return; }
           try {
             busy.open();
@@ -1400,19 +1655,34 @@
           } catch(err){ sap.m.MessageToast.show('Zurücksetzen fehlgeschlagen'); }
           finally { busy.close(); }
         } }) ] }), content:[
-          new sap.m.MessageStrip({ text:'Zusammenfassung: {= ${/dashboard/summary/total} + " Aufgaben • Überfällig: " + ${/dashboard/summary/overdue} + " • In 24h fällig: " + ${/dashboard/summary/dueSoon} }', type:'Information', showIcon:true, showCloseButton:false }),
+          new sap.m.MessageStrip({ text:'Zusammenfassung: {= ${/dashboard/summary/total} + " Aufgaben • Überfällig: " + ${/dashboard/summary/overdue} + " • In 24h fällig: " + ${/dashboard/summary/dueSoon} }', type:'Information', showIcon:true, showCloseButton:false, visible:'{/canAccessAdmin}' }),
+          new sap.m.MessageStrip({ text:'Keine Berechtigung für den Admin-Bereich. Bitte als Admin anmelden.', type:'Warning', showIcon:true, showCloseButton:false, visible:"{= !${/canAccessAdmin} }" }),
+          new sap.m.HBox({ justifyContent:'SpaceAround', width:'100%', items:[
+            new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://task', size:'2rem' }), new sap.m.ObjectNumber({ number:'{/dashboard/summary/total}', unit:'gesamt', emphasized:true }) ] }),
+            new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://lateness', size:'2rem', color:'Critical' }), new sap.m.ObjectNumber({ number:'{/dashboard/summary/overdue}', unit:'überfällig', emphasized:true, state:'Error' }) ] }),
+            new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://appointment-2', size:'2rem', color:'Information' }), new sap.m.ObjectNumber({ number:'{/dashboard/summary/dueSoon}', unit:'bald fällig', emphasized:false, state:'Information' }) ] })
+          ]}).addStyleClass('sapUiMediumMarginBottom'),
+          new sap.m.Panel({ expandable:false, headerText:'Statusverteilung', content:[ new sap.m.VBox({ width:'100%', items:[
+            new sap.m.HBox({ alignItems:'Center', items:[ new sap.m.Text({ text:'Offen', width:'8rem' }), new sap.m.ProgressIndicator({ percentValue:{ parts:['/dashboard/summary/status'], formatter:function(s){ try{ const t=(s && (s.offen||0)+(s.in_arbeit||0)+(s.abgeschlossen||0))||0; return t? Math.round(((s.offen||0)/t)*100):0; }catch(_){ return 0; } } }, displayValue:'{= ${/dashboard/summary/status/offen} || 0 }', state:'None', width:'100%' }) ] }).addStyleClass('sapUiSmallMarginBottom'),
+            new sap.m.HBox({ alignItems:'Center', items:[ new sap.m.Text({ text:'In Arbeit', width:'8rem' }), new sap.m.ProgressIndicator({ percentValue:{ parts:['/dashboard/summary/status'], formatter:function(s){ try{ const t=(s && (s.offen||0)+(s.in_arbeit||0)+(s.abgeschlossen||0))||0; return t? Math.round(((s.in_arbeit||0)/t)*100):0; }catch(_){ return 0; } } }, displayValue:'{= ${/dashboard/summary/status/in_arbeit} || 0 }', state:'Information', width:'100%' }) ] }).addStyleClass('sapUiSmallMarginBottom'),
+            new sap.m.HBox({ alignItems:'Center', items:[ new sap.m.Text({ text:'Abgeschlossen', width:'8rem' }), new sap.m.ProgressIndicator({ percentValue:{ parts:['/dashboard/summary/status'], formatter:function(s){ try{ const t=(s && (s.offen||0)+(s.in_arbeit||0)+(s.abgeschlossen||0))||0; return t? Math.round(((s.abgeschlossen||0)/t)*100):0; }catch(_){ return 0; } } }, displayValue:'{= ${/dashboard/summary/status/abgeschlossen} || 0 }', state:'Success', width:'100%' }) ] })
+          ]}) ] }).addStyleClass('sapUiSmallMarginBottom'),
           tagCloud,
           latestList
         ]});
 
         // Tabs Container
+        const adminTabContent = [
+          adminPanel
+        ];
         const tabs = new sap.m.IconTabBar({ expandable:false, items:[
-          new sap.m.IconTabFilter({ key:'tasks', text:'Aufgaben', count: '{/tasksCount}', icon:'sap-icon://task', content:[ toolbar, chipBar, kpiBar, prioLegend, statsBar, new sap.m.ObjectStatus({ text:'Überfällige Aufgaben werden rot markiert.', state:'None' }), list, adminPanel ] }),
+          new sap.m.IconTabFilter({ key:'tasks', text:'Aufgaben', count: '{/tasksCount}', icon:'sap-icon://task', content:[ toolbar, chipBar, kpiBar, prioLegend, statsBar, new sap.m.ObjectStatus({ text:'Überfällige Aufgaben werden rot markiert.', state:'None' }), list ] }),
           new sap.m.IconTabFilter({ key:'updates', text:'Updates', count: '{/updatesCount}', icon:'sap-icon://message-information', content:[ makeSimpleTab({ path:'/updates', title:'Updates', desc:'content', info:'date', detailBuilder: buildUpdateDetailContent, titleProp:'title', action:'update' }) ] }),
           new sap.m.IconTabFilter({ key:'guides', text:'Anleitungen', count: '{/guidesCount}', icon:'sap-icon://hint', content:[ makeSimpleTab({ path:'/guides', title:'Anleitungen', desc:'description', detailBuilder: buildGuideDetailContent, titleProp:'title', info:'duration', action:'guide' }) ] }),
           new sap.m.IconTabFilter({ key:'events', text:'Aktionstage', count: '{/eventsCount}', icon:'sap-icon://calendar', content:[ makeSimpleTab({ path:'/events', title:'Aktionstage', desc:'description', info:'date', detailBuilder: buildEventDetailContent, titleProp:'title', action:'event' }) ] }),
           new sap.m.IconTabFilter({ key:'board', text:'Board', icon:'sap-icon://kanban', content:[ makeBoard() ] }),
-          new sap.m.IconTabFilter({ key:'calendar', text:'Kalender', icon:'sap-icon://appointment-2', content:[ makeCalendar() ] })
+          new sap.m.IconTabFilter({ key:'calendar', text:'Kalender', icon:'sap-icon://appointment-2', content:[ makeCalendar() ] }),
+          new sap.m.IconTabFilter({ key:'admin', text:'Admin', icon:'sap-icon://action-settings', content: adminTabContent, visible:'{/canAccessAdmin}' })
         ]});
 
         // Apply admin settings after UI build
