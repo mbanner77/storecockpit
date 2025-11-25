@@ -247,7 +247,18 @@
           prioState: function(p){ return p==='hoch' ? 'Error' : (p==='mittel' ? 'Warning' : 'Success'); },
           statusState: function(s){ return s==='abgeschlossen' ? 'Success' : (s==='in_arbeit' ? 'Information' : 'None'); },
           statusText: function(s){ if (s==='offen') return 'Offen'; if (s==='in_arbeit') return 'In Arbeit'; if (s==='abgeschlossen') return 'Abgeschlossen'; return s||''; },
-          relative: function(ts){ try{ const d=new Date(ts); const diff=Date.now()-d.getTime(); const m=Math.floor(diff/60000); if (m<1) return 'gerade eben'; if (m<60) return `vor ${m} Min`; const h=Math.floor(m/60); if (h<24) return `vor ${h} Std`; const dd=Math.floor(h/24); return `vor ${dd} Tg`; }catch(_){ return ''; } }
+          relative: function(ts){ try{ const d=new Date(ts); const diff=Date.now()-d.getTime(); const m=Math.floor(diff/60000); if (m<1) return 'gerade eben'; if (m<60) return `vor ${m} Min`; const h=Math.floor(m/60); if (h<24) return `vor ${h} Std`; const dd=Math.floor(h/24); return `vor ${dd} Tg`; }catch(_){ return ''; } },
+          imageByMeta: function(priority, status, tags){
+            // Try to pick a lightweight representative image URL
+            try{
+              if (priority && String(priority).toLowerCase()==='hoch') return 'https://images.unsplash.com/photo-1526948128573-703ee1aeb6fa?w=256&q=40&auto=format&fit=crop';
+              if (status && String(status).toLowerCase()==='in_arbeit') return 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=256&q=40&auto=format&fit=crop';
+              const t = Array.isArray(tags)? tags.join(',').toLowerCase() : String(tags||'').toLowerCase();
+              if (t.includes('marketing')||t.includes('promo')) return 'https://images.unsplash.com/photo-1512295767273-ac109ac3acfa?w=256&q=40&auto=format&fit=crop';
+              if (t.includes('kalender')||t.includes('event')) return 'https://images.unsplash.com/photo-1511578314322-379afb476865?w=256&q=40&auto=format&fit=crop';
+            }catch(_){/* ignore */}
+            return 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=256&q=40&auto=format&fit=crop';
+          }
         };
 
         const model = new sap.ui.model.json.JSONModel({
@@ -868,6 +879,8 @@
         list.setNoDataText('Keine Aufgaben gefunden. Mit "Neue Aufgabe" kannst du starten.');
         const itemTpl = new sap.m.ObjectListItem({
           title: '{title}',
+          icon: { parts:['priority','status','tags'], formatter: fmt.imageByMeta },
+          iconDensityAware:false,
           number: { path: 'dueAt', formatter: fmt.dueText },
           numberState: { path: 'dueAt', formatter: function(d){ return fmt.overdue(d)? 'Error' : 'None'; } },
           firstStatus: new sap.m.ObjectStatus({ text: '{priority}', state: { path:'priority', formatter: fmt.prioState } }),
