@@ -2102,11 +2102,7 @@
             new sap.m.Text({ text:'{i>mitarbeiter}' }),
             new sap.m.Text({ text:'{i>rolle}' })
           ]});
-          table.bindItems({ path:'i>/rows', template: tpl });
-          const iModel = new sap.ui.model.json.JSONModel({ rows: [] });
-          table.setModel(iModel, 'i');
-          // sync from global model
-          table.addEventDelegate({ onAfterRendering: ()=>{ const rows = (model.getProperty('/intelli/rows')||[]); iModel.setProperty('/rows', rows); } });
+          table.bindItems({ path:'/intelli/rows', template: tpl });
           return new sap.m.VBox({ width:'100%', items:[ banner, new sap.m.HBox({ width:'100%', justifyContent:'SpaceAround', items:[ left, mid, right ] }).addStyleClass('sapUiSmallMarginBottom'), table ] });
         }
         const tabs = new sap.m.IconTabBar({ expandable:false, items:[
