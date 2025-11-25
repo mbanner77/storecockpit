@@ -320,18 +320,35 @@
             const kpis = { total: we.length, sto:0, external:0, promo:0, freshTk:0, postedOk:0, postedErr:0 };
             const now = Date.now();
             const top = [];
+            const freshTag = (t)=>{ const s = Array.isArray(t.tags)? t.tags.join(',').toLowerCase(): String(t.tags||'').toLowerCase(); return s.includes('frische')||s.includes('tk')||s.includes('tiefkühl')||s.includes('kühl'); };
+            const dayMs = 24*60*60*1000;
+            const ages = { d0_1:0, d1_3:0, d3_7:0, d7p:0 };
+            let throughputToday = 0; let totalCycleMs = 0; let cycleCount = 0;
             for (const t of we){
               const tp = (t.sourceDoc && t.sourceDoc.type) || '';
               if (tp==='STO') kpis.sto++; else if (tp==='PROMO') kpis.promo++; else kpis.external++;
-              const tagsText = Array.isArray(t.tags) ? t.tags.join(',').toLowerCase() : String(t.tags||'').toLowerCase();
-              if (tagsText.includes('frische') || tagsText.includes('tk') || tagsText.includes('tiefkühl') || tagsText.includes('kühl')) kpis.freshTk++;
+              if (freshTag(t)) kpis.freshTk++;
               if (String(t.status)==='abgeschlossen' && String(t.lastPostStatus||'')==='success') kpis.postedOk++;
               if (String(t.lastPostStatus||'')==='error') kpis.postedErr++;
               const due = t.dueAt ? new Date(t.dueAt).getTime() : NaN;
               if (Number.isFinite(due) && due < now && String(t.status)!=='abgeschlossen') top.push(t);
+              const base = Number.isFinite(due) ? due : (t.createdAt? Number(t.createdAt): NaN);
+              if (Number.isFinite(base)){
+                const ageDays = (now - base)/dayMs;
+                if (ageDays <= 1) ages.d0_1++; else if (ageDays <= 3) ages.d1_3++; else if (ageDays <= 7) ages.d3_7++; else ages.d7p++;
+              }
+              if (t.completedAt){
+                const d = new Date(t.completedAt);
+                const isToday = d.toDateString() === new Date().toDateString();
+                if (isToday) throughputToday++;
+                const created = t.createdAt ? Number(t.createdAt) : NaN;
+                if (Number.isFinite(created)) { totalCycleMs += (d.getTime() - created); cycleCount++; }
+              }
             }
             top.sort((a,b)=> new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
-            const derived = { weKPIs: kpis, topOverdueWE: top.slice(0,5) };
+            const onlyFresh = !!model.getProperty('/adminFilters/weOnlyFresh');
+            const topFiltered = onlyFresh ? top.filter(freshTag) : top;
+            const derived = { weKPIs: kpis, topOverdueWE: topFiltered.slice(0,5), ageBuckets: ages, throughputToday, avgCycleTimeHours: cycleCount? Math.round((totalCycleMs/ cycleCount)/360000)/10 : 0 };
             model.setProperty('/adminDerived', derived);
           }catch(_){ /* ignore */ }
         }
@@ -354,7 +371,9 @@
             tags: [],
             latest: [],
             generatedAt: ''
-          }
+          },
+          adminDerived: { weKPIs:{}, topOverdueWE:[], ageBuckets:{}, throughputToday:0, avgCycleTimeHours:0 },
+          adminFilters: { weOnlyFresh:false }
         });
 
         function persistRole(role){
@@ -1848,6 +1867,7 @@
               new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://error', size:'2rem', color:'Negative' }), new sap.m.ObjectNumber({ number:'{/adminDerived/weKPIs/postedErr}', unit:'Fehler', emphasized:true, state:'Error' }) ] })
             ]})
           ]}).addStyleClass('sapUiSmallMarginBottom'),
+          new sap.m.Toolbar({ visible:'{/canAccessAdmin}', content:[ new sap.m.Title({ text:'Filter' }), new sap.m.ToolbarSpacer(), new sap.m.Text({ text:'Nur Frische/TK' }), new sap.m.Switch({ state:'{/adminFilters/weOnlyFresh}', change:function(e){ model.setProperty('/adminFilters/weOnlyFresh', e.getParameter('state')); computeAdminDerivations(); } }) ] }).addStyleClass('sapUiTinyMarginBottom'),
           new sap.m.Panel({ expandable:false, headerText:'Top überfällige WE (Demo)', visible:'{/canAccessAdmin}', content:[
             new sap.m.List({ items:{ path:'/adminDerived/topOverdueWE', template: new sap.m.ObjectListItem({
               title:'{title}',
@@ -1858,6 +1878,18 @@
               ],
               firstStatus: new sap.m.ObjectStatus({ text:{ path:'status', formatter: fmt.statusText }, state:{ path:'status', formatter: fmt.statusState } })
             }) } })
+          ]}).addStyleClass('sapUiSmallMarginBottom'),
+          new sap.m.Panel({ expandable:false, headerText:'Altersverteilung & Durchsatz (Demo)', visible:'{/canAccessAdmin}', content:[
+            new sap.m.VBox({ width:'100%', items:[
+              new sap.m.HBox({ alignItems:'Center', items:[ new sap.m.Text({ text:'≤ 1 Tag', width:'7rem' }), new sap.m.ProgressIndicator({ width:'100%', percentValue:{ parts:['/adminDerived/ageBuckets','/adminDerived/weKPIs/total'], formatter:function(a,t){ try{ const total=t||0; return total? Math.round(((a.d0_1||0)/total)*100):0; }catch(_){ return 0; } } }, displayValue:'{= ${/adminDerived/ageBuckets/d0_1} || 0 }', state:'None' }) ] }).addStyleClass('sapUiSmallMarginBottom'),
+              new sap.m.HBox({ alignItems:'Center', items:[ new sap.m.Text({ text:'1–3 Tage', width:'7rem' }), new sap.m.ProgressIndicator({ width:'100%', percentValue:{ parts:['/adminDerived/ageBuckets','/adminDerived/weKPIs/total'], formatter:function(a,t){ try{ const total=t||0; return total? Math.round(((a.d1_3||0)/total)*100):0; }catch(_){ return 0; } } }, displayValue:'{= ${/adminDerived/ageBuckets/d1_3} || 0 }', state:'Information' }) ] }).addStyleClass('sapUiSmallMarginBottom'),
+              new sap.m.HBox({ alignItems:'Center', items:[ new sap.m.Text({ text:'3–7 Tage', width:'7rem' }), new sap.m.ProgressIndicator({ width:'100%', percentValue:{ parts:['/adminDerived/ageBuckets','/adminDerived/weKPIs/total'], formatter:function(a,t){ try{ const total=t||0; return total? Math.round(((a.d3_7||0)/total)*100):0; }catch(_){ return 0; } } }, displayValue:'{= ${/adminDerived/ageBuckets/d3_7} || 0 }', state:'Warning' }) ] }).addStyleClass('sapUiSmallMarginBottom'),
+              new sap.m.HBox({ alignItems:'Center', items:[ new sap.m.Text({ text:'> 7 Tage', width:'7rem' }), new sap.m.ProgressIndicator({ width:'100%', percentValue:{ parts:['/adminDerived/ageBuckets','/adminDerived/weKPIs/total'], formatter:function(a,t){ try{ const total=t||0; return total? Math.round(((a.d7p||0)/total)*100):0; }catch(_){ return 0; } } }, displayValue:'{= ${/adminDerived/ageBuckets/d7p} || 0 }', state:'Error' }) ] })
+            ]}).addStyleClass('sapUiSmallMarginBottom'),
+            new sap.m.HBox({ justifyContent:'SpaceAround', width:'100%', items:[
+              new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://activities', size:'2rem' }), new sap.m.ObjectNumber({ number:'{/adminDerived/throughputToday}', unit:'abgeschlossen heute' }) ] }),
+              new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://time-entry-request', size:'2rem' }), new sap.m.ObjectNumber({ number:'{/adminDerived/avgCycleTimeHours}', unit:'Ø Std. von Erstellung bis Abschluss' }) ] })
+            ]})
           ]}).addStyleClass('sapUiSmallMarginBottom'),
           new sap.m.Panel({ expandable:false, headerText:'Statusverteilung', content:[ new sap.m.VBox({ width:'100%', items:[
             new sap.m.HBox({ alignItems:'Center', items:[ new sap.m.Text({ text:'Offen', width:'8rem' }), new sap.m.ProgressIndicator({ percentValue:{ parts:['/dashboard/summary/status'], formatter:function(s){ try{ const t=(s && (s.offen||0)+(s.in_arbeit||0)+(s.abgeschlossen||0))||0; return t? Math.round(((s.offen||0)/t)*100):0; }catch(_){ return 0; } } }, displayValue:'{= ${/dashboard/summary/status/offen} || 0 }', state:'None', width:'100%' }) ] }).addStyleClass('sapUiSmallMarginBottom'),
