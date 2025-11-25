@@ -984,6 +984,8 @@
             return;
           }
           const f = buildTaskForm({});
+          let heroImg = new sap.m.Image({ src:'', decorative:true, width:'100%', height:'160px', visible:false }).addStyleClass('detail-hero sapUiSmallMarginBottom');
+          const imgInput = new sap.m.Input({ value:'', placeholder:'Bild-URL (optional)', liveChange:(e)=>{ const v = e.getParameter('value'); if (v){ heroImg.setSrc(v); heroImg.setVisible(true); } else { heroImg.setVisible(false); } } });
           const templateSel = new sap.m.Select({ width:'100%', items: TEMPLATES.map(t=> new sap.ui.core.Item({ key:t.key, text:t.text })), change:(e)=>{ applyTemplateToForm(e.getSource().getSelectedKey(), f); } });
           const form = new sap.ui.layout.form.SimpleForm({ editable:true, layout:'ResponsiveGridLayout', labelSpanXL:3, labelSpanL:3, labelSpanM:4, adjustLabelSpan:false, content:[
             new sap.m.Label({text:'Vorlage'}), templateSel,
@@ -992,13 +994,14 @@
             new sap.m.Label({text:'Priorität'}), f.prio,
             new sap.m.Label({text:'Status'}), f.status,
             new sap.m.Label({text:'Fällig bis'}), f.due,
-            new sap.m.Label({text:'Tags'}), f.tagsInput
+            new sap.m.Label({text:'Tags'}), f.tagsInput,
+            new sap.m.Label({text:'Bild URL'}), imgInput
           ]});
-          dlg = new sap.m.Dialog({ contentWidth:'640px', contentHeight:'auto', stretchOnPhone:true, content:[ form ],
+          dlg = new sap.m.Dialog({ contentWidth:'640px', contentHeight:'auto', stretchOnPhone:true, content:[ heroImg, form ],
             customHeader: new sap.m.Bar({ contentLeft:[ new sap.ui.core.Icon({ src:'sap-icon://add', color:'AccentColor1' }), new sap.m.Title({ text:'Neue Aufgabe' }) ], contentRight:[ new sap.m.Button({ icon:'sap-icon://decline', tooltip:'Schließen', press: ()=>dlg.close() }) ] }),
             beginButton: new sap.m.Button({ text:'Speichern', type:'Emphasized', press: async ()=>{
             if (!f.title.getValue()){ f.title.setValueState('Error'); return; }
-            await createTask({ title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue(), tags: f.tagsInput.getValue() });
+            await createTask({ title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue(), tags: f.tagsInput.getValue(), image: imgInput.getValue() });
             dlg.close(); dlg.destroy();
           }}), endButton: new sap.m.Button({ text:'Abbrechen', press: ()=>{ dlg.close(); dlg.destroy(); } }) });
           dlg.open();
@@ -1010,19 +1013,28 @@
           const commentList = new sap.m.List({ headerText:'Kommentare' });
           commentList.bindItems({ path:'c>/items', template: new sap.m.FeedListItem({ text:'{c>text}', sender:'{c>author}', icon:{ path:'c>author', formatter:function(a){ return a&&a.toLowerCase().includes('leitung')? 'sap-icon://manager' : 'sap-icon://employee'; } }, info:{ path:'c>createdAt', formatter: fmt.relative } }) });
           const feed = new sap.m.FeedInput({ placeholder:'Kommentar hinzufügen...', post: async (e)=>{ const text = e.getParameter('text'); if(!text) return; const c = await postComment(task.id, text); const arr=cModel.getProperty('/items'); arr.push(c); cModel.setProperty('/items', arr); } });
+
+          const heroUrl = (task && (task.image || task.banner)) || fmt.imageByMeta(task && task.priority, task && task.status, task && task.tags);
+          const heroImg = new sap.m.Image({ src: heroUrl, decorative:true, width:'100%', height:'160px' }).addStyleClass('detail-hero sapUiSmallMarginBottom');
+          const imgInputEdit = new sap.m.Input({ value: task && task.image || '', placeholder:'Bild-URL (optional)', liveChange:(e)=>{ const v = e.getParameter('value'); heroImg.setSrc(v||heroUrl); heroImg.setVisible(!!(v||heroUrl)); } });
+
           const footer = new sap.m.HBox({ justifyContent:'SpaceBetween', width:'100%', items:[
             new sap.m.Button({ text:'Löschen', type:'Reject', visible: canDelete, press: async ()=>{ await deleteTask(task.id); dlg.close(); dlg.destroy(); } }),
-            new sap.m.Button({ text:'Speichern', type:'Emphasized', press: async ()=>{ if (!f.title.getValue()){ f.title.setValueState('Error'); return; } await updateTask(task.id, { title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue(), tags: f.tagsInput.getValue() }); dlg.close(); dlg.destroy(); } })
+            new sap.m.Button({ text:'Speichern', type:'Emphasized', press: async ()=>{ if (!f.title.getValue()){ f.title.setValueState('Error'); return; } await updateTask(task.id, { title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue(), tags: f.tagsInput.getValue(), image: imgInputEdit.getValue() }); dlg.close(); dlg.destroy(); } })
           ]});
+
           const form = new sap.ui.layout.form.SimpleForm({ editable:true, layout:'ResponsiveGridLayout', labelSpanXL:3, labelSpanL:3, labelSpanM:4, adjustLabelSpan:false, content:[
             new sap.m.Label({text:'Titel'}), f.title,
             new sap.m.Label({text:'Beschreibung'}), f.desc,
             new sap.m.Label({text:'Priorität'}), f.prio,
             new sap.m.Label({text:'Status'}), f.status,
             new sap.m.Label({text:'Fällig bis'}), f.due,
-            new sap.m.Label({text:'Tags'}), f.tagsInput
+            new sap.m.Label({text:'Tags'}), f.tagsInput,
+            new sap.m.Label({text:'Bild URL'}), imgInputEdit
           ]});
+
           dlg = new sap.m.Dialog({ contentWidth:'720px', contentHeight:'auto', stretchOnPhone:true, content:[
+            heroImg,
             form,
             new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Kommentare' }) ] }),
             commentList,
@@ -1301,7 +1313,7 @@
         function buildEventDetailContent(event){
           if (!event || typeof event !== 'object') { return []; }
           const sections = [];
-          const description = String(event.description || '').trim();
+          const description = String(event.description || event.detail || '').trim();
 
           const overviewControls = [];
           if (description){
@@ -1311,12 +1323,16 @@
             }).addStyleClass('sapUiSmallMarginBottom detail-description'));
           }
           const meta = [];
-          if (event.date){ meta.push(new sap.m.ObjectStatus({ text:'Termin: ' + event.date, icon:'sap-icon://calendar', state:'Information' })); }
+          const dateVal = event.date || event.when || event.time || '';
+          if (dateVal){ meta.push(new sap.m.ObjectStatus({ text:'Termin: ' + String(dateVal), icon:'sap-icon://calendar', state:'Information' })); }
           const location = event.location || event.place || '';
           if (location){ meta.push(new sap.m.ObjectStatus({ text:'Ort: ' + location, icon:'sap-icon://map-2', state:'None' })); }
           const responsible = event.responsible || event.owner || '';
           if (responsible){ meta.push(new sap.m.ObjectStatus({ text:'Verantwortlich: ' + responsible, icon:'sap-icon://badge', state:'None' })); }
           if (meta.length){ overviewControls.push(new sap.m.Toolbar({ content: meta }).addStyleClass('detail-meta sapUiSmallMarginBottom')); }
+          if (!description && !meta.length){
+            overviewControls.push(new sap.m.IllustratedMessage({ illustrationType:'sapIllus-SceneNoData', title:'Überblick', description:'Für diesen Aktionstag liegen noch keine Detailinformationen vor.' }));
+          }
           const overviewPanel = detailPanel('Überblick', 'sap-icon://event', overviewControls);
           if (overviewPanel) { sections.push(overviewPanel); }
 
