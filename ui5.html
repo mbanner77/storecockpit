@@ -309,7 +309,31 @@
             const arr = (model.getProperty('/tasks')||[]).slice();
             arr.forEach(t=>{ if (t && t.processType==='we'){ t.priority = derivePriority(t); } });
             model.setProperty('/tasks', arr);
+            computeAdminDerivations();
           }catch(e){ /* no-op */ }
+        }
+
+        function computeAdminDerivations(){
+          try{
+            const tasks = model.getProperty('/tasks') || [];
+            const we = tasks.filter(t=> t && t.processType==='we');
+            const kpis = { total: we.length, sto:0, external:0, promo:0, freshTk:0, postedOk:0, postedErr:0 };
+            const now = Date.now();
+            const top = [];
+            for (const t of we){
+              const tp = (t.sourceDoc && t.sourceDoc.type) || '';
+              if (tp==='STO') kpis.sto++; else if (tp==='PROMO') kpis.promo++; else kpis.external++;
+              const tagsText = Array.isArray(t.tags) ? t.tags.join(',').toLowerCase() : String(t.tags||'').toLowerCase();
+              if (tagsText.includes('frische') || tagsText.includes('tk') || tagsText.includes('tiefkühl') || tagsText.includes('kühl')) kpis.freshTk++;
+              if (String(t.status)==='abgeschlossen' && String(t.lastPostStatus||'')==='success') kpis.postedOk++;
+              if (String(t.lastPostStatus||'')==='error') kpis.postedErr++;
+              const due = t.dueAt ? new Date(t.dueAt).getTime() : NaN;
+              if (Number.isFinite(due) && due < now && String(t.status)!=='abgeschlossen') top.push(t);
+            }
+            top.sort((a,b)=> new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+            const derived = { weKPIs: kpis, topOverdueWE: top.slice(0,5) };
+            model.setProperty('/adminDerived', derived);
+          }catch(_){ /* ignore */ }
         }
 
         const model = new sap.ui.model.json.JSONModel({
@@ -1811,6 +1835,30 @@
             new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://lateness', size:'2rem', color:'Critical' }), new sap.m.ObjectNumber({ number:'{/dashboard/summary/overdue}', unit:'überfällig', emphasized:true, state:'Error' }) ] }),
             new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://appointment-2', size:'2rem', color:'Information' }), new sap.m.ObjectNumber({ number:'{/dashboard/summary/dueSoon}', unit:'bald fällig', emphasized:false, state:'Information' }) ] })
           ]}).addStyleClass('sapUiMediumMarginBottom'),
+          new sap.m.Panel({ expandable:false, headerText:'WE KPIs (Demo)', visible:'{/canAccessAdmin}', content:[
+            new sap.m.HBox({ justifyContent:'SpaceAround', width:'100%', items:[
+              new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://shipping-status', size:'2rem' }), new sap.m.ObjectNumber({ number:'{/adminDerived/weKPIs/total}', unit:'WE gesamt' }) ] }),
+              new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://share-2', size:'2rem' }), new sap.m.ObjectNumber({ number:'{/adminDerived/weKPIs/sto}', unit:'Umlagerung' }) ] }),
+              new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://supplier', size:'2rem' }), new sap.m.ObjectNumber({ number:'{/adminDerived/weKPIs/external}', unit:'extern' }) ] }),
+              new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://marketing-campaign', size:'2rem' }), new sap.m.ObjectNumber({ number:'{/adminDerived/weKPIs/promo}', unit:'Promo' }) ] }),
+              new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://fridge', size:'2rem' }), new sap.m.ObjectNumber({ number:'{/adminDerived/weKPIs/freshTk}', unit:'Frische/TK' }) ] })
+            ]}).addStyleClass('sapUiSmallMarginBottom'),
+            new sap.m.HBox({ justifyContent:'SpaceAround', width:'100%', items:[
+              new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://accept', size:'2rem', color:'Positive' }), new sap.m.ObjectNumber({ number:'{/adminDerived/weKPIs/postedOk}', unit:'gebucht OK', emphasized:true, state:'Success' }) ] }),
+              new sap.m.VBox({ alignItems:'Center', items:[ new sap.ui.core.Icon({ src:'sap-icon://error', size:'2rem', color:'Negative' }), new sap.m.ObjectNumber({ number:'{/adminDerived/weKPIs/postedErr}', unit:'Fehler', emphasized:true, state:'Error' }) ] })
+            ]})
+          ]}).addStyleClass('sapUiSmallMarginBottom'),
+          new sap.m.Panel({ expandable:false, headerText:'Top überfällige WE (Demo)', visible:'{/canAccessAdmin}', content:[
+            new sap.m.List({ items:{ path:'/adminDerived/topOverdueWE', template: new sap.m.ObjectListItem({
+              title:'{title}',
+              number: { path:'priority', formatter: function(p){ return p||''; } }, numberState:{ path:'priority', formatter: fmt.prioState },
+              attributes:[
+                new sap.m.ObjectAttribute({ text:{ parts:['sourceDoc/type','sourceDoc/id'], formatter: function(t,i){ return (t||'–') + (i? (' • '+i):''); } } }),
+                new sap.m.ObjectAttribute({ text:{ path:'dueAt', formatter: fmt.dueText } })
+              ],
+              firstStatus: new sap.m.ObjectStatus({ text:{ path:'status', formatter: fmt.statusText }, state:{ path:'status', formatter: fmt.statusState } })
+            }) } })
+          ]}).addStyleClass('sapUiSmallMarginBottom'),
           new sap.m.Panel({ expandable:false, headerText:'Statusverteilung', content:[ new sap.m.VBox({ width:'100%', items:[
             new sap.m.HBox({ alignItems:'Center', items:[ new sap.m.Text({ text:'Offen', width:'8rem' }), new sap.m.ProgressIndicator({ percentValue:{ parts:['/dashboard/summary/status'], formatter:function(s){ try{ const t=(s && (s.offen||0)+(s.in_arbeit||0)+(s.abgeschlossen||0))||0; return t? Math.round(((s.offen||0)/t)*100):0; }catch(_){ return 0; } } }, displayValue:'{= ${/dashboard/summary/status/offen} || 0 }', state:'None', width:'100%' }) ] }).addStyleClass('sapUiSmallMarginBottom'),
             new sap.m.HBox({ alignItems:'Center', items:[ new sap.m.Text({ text:'In Arbeit', width:'8rem' }), new sap.m.ProgressIndicator({ percentValue:{ parts:['/dashboard/summary/status'], formatter:function(s){ try{ const t=(s && (s.offen||0)+(s.in_arbeit||0)+(s.abgeschlossen||0))||0; return t? Math.round(((s.in_arbeit||0)/t)*100):0; }catch(_){ return 0; } } }, displayValue:'{= ${/dashboard/summary/status/in_arbeit} || 0 }', state:'Information', width:'100%' }) ] }).addStyleClass('sapUiSmallMarginBottom'),
