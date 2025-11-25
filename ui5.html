@@ -1817,6 +1817,80 @@
           new sap.m.ObjectStatus({ text:'Überfällig: {/countOverdue}', state:'Error' })
         ]});
 
+        function openF1248(task){
+          try{
+            const doc = (task && task.sourceDoc && task.sourceDoc.id) || '';
+            const url = 'https://me.sap.com/app/fiori/F1248?doc=' + encodeURIComponent(doc);
+            window.open(url, '_blank');
+          }catch(e){ console.error(e); sap.m.MessageToast.show('F1248 konnte nicht geöffnet werden'); }
+        }
+
+        function makeTaskCenter(){
+          const prioSel = new sap.m.Select({ width:'11rem', selectedKey:'', items:[ new sap.ui.core.Item({ key:'', text:'Priorität: Alle' }), new sap.ui.core.Item({ key:'hoch', text:'Hoch' }), new sap.ui.core.Item({ key:'mittel', text:'Mittel' }), new sap.ui.core.Item({ key:'niedrig', text:'Niedrig' }) ] });
+          const statusSel = new sap.m.Select({ width:'13rem', selectedKey:'offen', items:[ new sap.ui.core.Item({ key:'', text:'Status: Alle' }), new sap.ui.core.Item({ key:'offen', text:'Offen' }), new sap.ui.core.Item({ key:'in_arbeit', text:'In Arbeit' }), new sap.ui.core.Item({ key:'abgeschlossen', text:'Erledigt' }) ] });
+          const typeSel = new sap.m.Select({ width:'15rem', selectedKey:'', items:[ new sap.ui.core.Item({ key:'', text:'Lieferart: Alle' }), new sap.ui.core.Item({ key:'STO', text:'Umlagerung (Lager/Filiale)' }), new sap.ui.core.Item({ key:'EXTERNAL', text:'Externer Partner' }), new sap.ui.core.Item({ key:'PROMO', text:'Aktion' }) ] });
+          const tcToolbar = new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Task Center – Wareneingänge' }), new sap.m.ToolbarSpacer(), prioSel, statusSel, typeSel ] }).addStyleClass('sapUiSmallMarginBottom');
+
+          const table = new sap.m.Table({
+            inset:false,
+            mode:'None',
+            columns:[
+              new sap.m.Column({ header:new sap.m.Label({ text:'Beleg' }) }),
+              new sap.m.Column({ header:new sap.m.Label({ text:'Belegart' }) }),
+              new sap.m.Column({ header:new sap.m.Label({ text:'Herkunft' }) }),
+              new sap.m.Column({ header:new sap.m.Label({ text:'Warengruppe' }) }),
+              new sap.m.Column({ header:new sap.m.Label({ text:'Aktion' }) }),
+              new sap.m.Column({ header:new sap.m.Label({ text:'Stichtag' }) }),
+              new sap.m.Column({ header:new sap.m.Label({ text:'Priorität' }) }),
+              new sap.m.Column({ header:new sap.m.Label({ text:'Status' }) }),
+              new sap.m.Column({ header:new sap.m.Label({ text:'Liefertermin' }) }),
+              new sap.m.Column({ header:new sap.m.Label({ text:'Aktionen' }) })
+            ]
+          });
+
+          function originText(t){ const tp=(t && t.sourceDoc && t.sourceDoc.type)||''; return tp==='STO' ? 'Lager/Filiale' : 'Externer Partner'; }
+          function catText(t){ const s=Array.isArray(t&&t.tags)? t.tags.join(',').toLowerCase(): String((t&&t.tags)||'').toLowerCase(); if (s.includes('frische')) return 'Frische'; if (s.includes('tk')||s.includes('tiefkühl')||s.includes('kühl')) return 'Tiefkühlware'; return 'sonstige'; }
+          function isPromo(t){ return (t && t.sourceDoc && t.sourceDoc.type)==='PROMO'; }
+          function prioOrder(p){ return p==='hoch'?1:(p==='mittel'?2:3); }
+
+          const template = new sap.m.ColumnListItem({
+            cells:[
+              new sap.m.ObjectIdentifier({ title:{ parts:['sourceDoc/id'], formatter:function(id){ return id||'—'; } }, text:'{title}' }),
+              new sap.m.ObjectStatus({ text:{ parts:['sourceDoc/type'], formatter:function(t){ return t||'—'; } }, state:'None' }),
+              new sap.m.Text({ text:{ path:'.', formatter: originText } }),
+              new sap.m.ObjectStatus({ text:{ path:'.', formatter: catText }, state:{ path:'priority', formatter: fmt.prioState } }),
+              new sap.m.ObjectStatus({ text:{ path:'.', formatter:function(t){ return isPromo(t)? 'Ja':'Nein'; } }, state:'None' }),
+              new sap.m.Text({ text:{ path:'dueAt', formatter: fmt.dueText } }),
+              new sap.m.ObjectStatus({ text:{ path:'priority' }, state:{ path:'priority', formatter: fmt.prioState } }),
+              new sap.m.ObjectStatus({ text:{ path:'status', formatter: fmt.statusText }, state:{ path:'status', formatter: fmt.statusState } }),
+              new sap.m.Text({ text:{ path:'expectedAt', formatter: fmt.dueText } }),
+              new sap.m.HBox({ items:[
+                new sap.m.Button({ text:'Öffnen', type:'Transparent', press:function(e){ const ctx=e.getSource().getBindingContext(); const t=ctx && ctx.getObject(); const docType=(t&&t.sourceDoc&&t.sourceDoc.type)||''; if (docType==='STO'){ openEditDialog(t); } else { openF1248(t); } } }),
+                new sap.m.Button({ text:'Erledigt', type:'Success', visible:{ path:'.', formatter:function(t){ const docType=(t&&t.sourceDoc&&t.sourceDoc.type)||''; return docType==='STO' && (model.getProperty('/canPlanTasks') || model.getProperty('/canAccessAdmin')); } }, press: async function(e){ const t=e.getSource().getBindingContext().getObject(); await mockCompleteTask(t); } })
+              ] })
+            ]
+          });
+
+          function applyBinding(){
+            const binding = table.getBinding('items'); if (!binding) return;
+            const filters = [];
+            filters.push(new sap.ui.model.Filter({ path:'processType', operator:'EQ', value1:'we' }));
+            const p = prioSel.getSelectedKey(); if (p){ filters.push(new sap.ui.model.Filter({ path:'priority', operator:'EQ', value1:p })); }
+            const s = statusSel.getSelectedKey(); if (s){ filters.push(new sap.ui.model.Filter({ path:'status', operator:'EQ', value1:s })); }
+            const t = typeSel.getSelectedKey(); if (t==='STO'){ filters.push(new sap.ui.model.Filter({ path:'sourceDoc/type', operator:'EQ', value1:'STO' })); }
+            else if (t==='PROMO'){ filters.push(new sap.ui.model.Filter({ path:'sourceDoc/type', operator:'EQ', value1:'PROMO' })); }
+            else if (t==='EXTERNAL'){ filters.push(new sap.ui.model.Filter(function(o){ const tp=(o.getProperty('sourceDoc')||{}).type||''; return tp && tp!=='STO' && tp!=='PROMO'; })); }
+            binding.filter(filters);
+            binding.sort([ new sap.ui.model.Sorter('priority', false, null, function(a,b){ return prioOrder(a)-prioOrder(b); }), new sap.ui.model.Sorter('dueAt', false) ]);
+          }
+
+          table.bindItems({ path:'/tasks', template });
+          table.attachEventOnce('updateFinished', applyBinding);
+          prioSel.attachChange(applyBinding); statusSel.attachChange(applyBinding); typeSel.attachChange(applyBinding);
+
+          return new sap.m.VBox({ width:'100%', items:[ tcToolbar, table ] });
+        }
+
         const tagCloud = new sap.m.VBox({ items:[ new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Top Tags' }), new sap.m.ToolbarSpacer(), new sap.m.Button({ text:'Aktualisieren', icon:'sap-icon://synchronize', press: loadAdminOverview, tooltip:'Admin Überblick erneut laden' }) ] }), new sap.m.FlexBox({ alignItems:'Start', wrap:'Wrap', items:{ path:'/dashboard/tags', template: new sap.m.ObjectStatus({ text:'{tag} ({count})', state:'None' }).addStyleClass('sapUiSmallMargin') } }) ] });
         tagCloud.bindProperty('visible','/canAccessAdmin');
         const latestList = new sap.m.List({ headerText:'Neueste Aufgaben (Admin)', visible: { path:'/canAccessAdmin' } });
@@ -1911,6 +1985,7 @@
           new sap.m.IconTabFilter({ key:'events', text:'Aktionstage', count: '{/eventsCount}', icon:'sap-icon://calendar', content:[ makeSimpleTab({ path:'/events', title:'Aktionstage', desc:'description', info:'date', detailBuilder: buildEventDetailContent, titleProp:'title', action:'event' }) ] }),
           new sap.m.IconTabFilter({ key:'board', text:'Board', icon:'sap-icon://kanban', content:[ makeBoard() ] }),
           new sap.m.IconTabFilter({ key:'calendar', text:'Kalender', icon:'sap-icon://appointment-2', content:[ makeCalendar() ] }),
+          new sap.m.IconTabFilter({ key:'taskcenter', text:'Task Center', icon:'sap-icon://shipping-status', content:[ makeTaskCenter() ] }),
           new sap.m.IconTabFilter({ key:'admin', text:'Admin', icon:'sap-icon://action-settings', content: adminTabContent, visible:'{/canAccessAdmin}' })
         ]});
 
