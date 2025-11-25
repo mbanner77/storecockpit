@@ -265,10 +265,10 @@
               const proc = task && task.processType || '';
               const tp = task && task.sourceDoc && task.sourceDoc.type || '';
               if (proc==='we'){
+                if (tp==='STO') return 'https://images.unsplash.com/photo-1586521934631-8f198f0b2f53?w=600&q=60&auto=format&fit=crop';
+                if (tp==='PROMO') return 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=600&q=60&auto=format&fit=crop';
                 if (tags.includes('frische')) return 'https://images.unsplash.com/photo-1501004318641-b39e6451bec6?w=600&q=60&auto=format&fit=crop';
                 if (tags.includes('tk')||tags.includes('tiefkühl')||tags.includes('kühl')) return 'https://images.unsplash.com/photo-1511966171251-30f3b4d3a9e1?w=600&q=60&auto=format&fit=crop';
-                if (tp==='PROMO') return 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=600&q=60&auto=format&fit=crop';
-                if (tp==='STO') return 'https://images.unsplash.com/photo-1586521934631-8f198f0b2f53?w=600&q=60&auto=format&fit=crop';
                 if (tp==='PO' || tp==='DELIVERY') return 'https://images.unsplash.com/photo-1557821552-17105176677c?w=600&q=60&auto=format&fit=crop';
               }
               if (tags.includes('hygiene')) return 'https://images.unsplash.com/photo-1581579188871-45ea61f2a0c8?w=600&q=60&auto=format&fit=crop';
