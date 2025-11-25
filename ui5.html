@@ -742,6 +742,23 @@
           }catch(e){ console.error(e); sap.m.MessageToast.show('Abschluss fehlgeschlagen (Mock)'); }
         }
 
+        function ensureDemoWeTasks(){
+          try{
+            const tasks = model.getProperty('/tasks') || [];
+            const hasWE = tasks.some(t=> t && t.processType==='we');
+            if (hasWE) { computeAdminDerivations(); return; }
+            const demo = (window.APP_DATA && Array.isArray(window.APP_DATA.tasks)) ? window.APP_DATA.tasks : [];
+            const demoWE = demo.filter(t=> t && t.processType==='we');
+            if (!demoWE.length) { computeAdminDerivations(); return; }
+            const merged = demoWE.concat(tasks);
+            model.setProperty('/tasks', merged);
+            model.setProperty('/tasksCount', merged.length);
+            model.setProperty('/tasksTotal', merged.length);
+            model.setProperty('/tasksLabel', 'Aufgaben: ' + merged.length);
+            recomputePriorities();
+          }catch(_){ /* ignore */ }
+        }
+
         function taskSorter(){
           const sort = model.getProperty('/sort');
           if (sort==='created_asc') return [ new sap.ui.model.Sorter('createdAt', false) ];
@@ -882,6 +899,7 @@
             model.setProperty('/countOverdue', over);
           } finally { list.setBusy(false); }
           saveView();
+          ensureDemoWeTasks();
         }
         const search = new sap.m.SearchField({ width: '100%', liveChange: async e=>{ model.setProperty('/search', e.getSource().getValue()); model.setProperty('/tasksPage', 1); updateFilterSummary(); await loadTasks(); } });
         const sortSelect = new sap.m.Select({ width:'12rem', selectedKey:'{/sort}', change: async e=>{ model.setProperty('/sort', e.getSource().getSelectedKey()); model.setProperty('/tasksPage', 1); updateFilterSummary(); await loadTasks(); }, items:[
