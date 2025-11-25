@@ -384,7 +384,10 @@
 
         function computeIntelliDerived(){
           try{
-            const tasks = (model.getProperty('/tasks')||[]).slice();
+            let tasks = (model.getProperty('/tasks')||[]).slice();
+            if (!tasks.length && window.APP_DATA && Array.isArray(window.APP_DATA.tasks)){
+              tasks = window.APP_DATA.tasks.slice();
+            }
             // pick a few representative tasks
             const rows = tasks.slice(0, 8).map((t, idx)=>{
               const prio = t.priority || 'mittel';
@@ -428,7 +431,8 @@
             generatedAt: ''
           },
           adminDerived: { weKPIs:{}, topOverdueWE:[], ageBuckets:{}, throughputToday:0, avgCycleTimeHours:0 },
-          adminFilters: { weOnlyFresh:false }
+          adminFilters: { weOnlyFresh:false },
+          intelli: { rows: [] }
         });
 
         function persistRole(role){
@@ -803,7 +807,12 @@
             const tasks = model.getProperty('/tasks') || [];
             const hasWE = tasks.some(t=> t && t.processType==='we');
             if (hasWE) { computeAdminDerivations(); return; }
-            const demo = (window.APP_DATA && Array.isArray(window.APP_DATA.tasks)) ? window.APP_DATA.tasks : [];
+            if (!window.APP_DATA || !Array.isArray(window.APP_DATA.tasks)){
+              ensureDemoWeTasks._tries = (ensureDemoWeTasks._tries||0) + 1;
+              if (ensureDemoWeTasks._tries < 10){ setTimeout(ensureDemoWeTasks, 200); }
+              return;
+            }
+            const demo = window.APP_DATA.tasks;
             const demoWE = demo.filter(t=> t && t.processType==='we');
             if (!demoWE.length) { computeAdminDerivations(); return; }
             const merged = demoWE.concat(tasks);
@@ -957,6 +966,7 @@
           } finally { list.setBusy(false); }
           saveView();
           ensureDemoWeTasks();
+          computeIntelliDerived();
         }
         const search = new sap.m.SearchField({ width: '100%', liveChange: async e=>{ model.setProperty('/search', e.getSource().getValue()); model.setProperty('/tasksPage', 1); updateFilterSummary(); await loadTasks(); } });
         const sortSelect = new sap.m.Select({ width:'12rem', selectedKey:'{/sort}', change: async e=>{ model.setProperty('/sort', e.getSource().getSelectedKey()); model.setProperty('/tasksPage', 1); updateFilterSummary(); await loadTasks(); }, items:[
@@ -2095,12 +2105,12 @@
             new sap.m.Column({ header:new sap.m.Label({ text:'Rolle' }) })
           ]});
           const tpl = new sap.m.ColumnListItem({ cells:[
-            new sap.m.Text({ text:'{i>nr}' }),
-            new sap.m.Text({ text:'{i>title}' }),
-            new sap.m.ObjectStatus({ text:'{i>priority}', state:{ path:'i>priority', formatter: fmt.prioState } }),
-            new sap.m.Text({ text:{ path:'i>dueAt', formatter: fmt.dueText } }),
-            new sap.m.Text({ text:'{i>mitarbeiter}' }),
-            new sap.m.Text({ text:'{i>rolle}' })
+            new sap.m.Text({ text:'{nr}' }),
+            new sap.m.Text({ text:'{title}' }),
+            new sap.m.ObjectStatus({ text:'{priority}', state:{ path:'priority', formatter: fmt.prioState } }),
+            new sap.m.Text({ text:{ path:'dueAt', formatter: fmt.dueText } }),
+            new sap.m.Text({ text:'{mitarbeiter}' }),
+            new sap.m.Text({ text:'{rolle}' })
           ]});
           table.bindItems({ path:'/intelli/rows', template: tpl });
           return new sap.m.VBox({ width:'100%', items:[ banner, new sap.m.HBox({ width:'100%', justifyContent:'SpaceAround', items:[ left, mid, right ] }).addStyleClass('sapUiSmallMarginBottom'), table ] });
