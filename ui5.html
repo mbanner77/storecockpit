@@ -282,6 +282,36 @@
           return 'NONE';
         }
 
+        function derivePriority(task){
+          try{
+            if (!task || task.processType!=='we') return task.priority || 'mittel';
+            const type = (task.sourceDoc && task.sourceDoc.type) || '';
+            const tagsText = Array.isArray(task.tags) ? task.tags.join(',').toLowerCase() : String(task.tags||'').toLowerCase();
+            const isFresh = tagsText.includes('frische') || tagsText.includes('tk') || tagsText.includes('tiefkühl') || tagsText.includes('kühl');
+            const due = task.dueAt ? new Date(task.dueAt) : null;
+            const dueFuture = due && due.getTime() > Date.now();
+            if (type==='STO'){ // Umlagerung: intern, direkt verräumen
+              return isFresh ? 'hoch' : 'mittel';
+            }
+            if (type==='PROMO'){ // Aktion: bis Stichtag warten
+              return dueFuture ? 'niedrig' : (isFresh ? 'mittel' : 'niedrig');
+            }
+            // Extern (PO/DELIVERY): prüfen und verbuchen über F1248, Fresh/TK sofort hohe Prio
+            if (type==='PO' || type==='DELIVERY' || type===''){
+              return isFresh ? 'hoch' : 'mittel';
+            }
+            return task.priority || 'mittel';
+          }catch(_){ return task && task.priority || 'mittel'; }
+        }
+
+        function recomputePriorities(){
+          try{
+            const arr = (model.getProperty('/tasks')||[]).slice();
+            arr.forEach(t=>{ if (t && t.processType==='we'){ t.priority = derivePriority(t); } });
+            model.setProperty('/tasks', arr);
+          }catch(e){ /* no-op */ }
+        }
+
         const model = new sap.ui.model.json.JSONModel({
           role: initialRole,
           isAuthenticated: Boolean(initialRole),
@@ -527,6 +557,7 @@
         }
         await ensureAuthenticated();
         await loadAll();
+        recomputePriorities();
         await loadAdminOverview();
         needInitialFilterSummary = true;
         // polling for new updates/events (configurable)
@@ -595,12 +626,14 @@
             arr.unshift(tmp);
             model.setProperty('/tasks', arr);
             sap.m.MessageToast.show('Demo: Aufgabe lokal hinzugefügt');
+            recomputePriorities();
             return;
           }
           const r = await fetch(api + '/tasks', { method:'POST', headers: authHeaders(), body: JSON.stringify(payload)});
           const t = await r.json();
           const arr = model.getProperty('/tasks').slice(); arr.unshift(t); model.setProperty('/tasks', arr);
           sap.m.MessageToast.show('Aufgabe erstellt');
+          recomputePriorities();
         }
         async function updateTask(id, payload){
           const arr = model.getProperty('/tasks').slice();
@@ -629,6 +662,7 @@
             model.setProperty('/tasks', arr.concat(updatedTask));
           }
           sap.m.MessageToast.show('Aufgabe gespeichert');
+          recomputePriorities();
         }
         async function deleteTask(id){
           if (isOfflineApi || !api) {
@@ -1042,6 +1076,7 @@
             new sap.ui.core.Item({ key:'', text:'Belegart wählen' }),
             new sap.ui.core.Item({ key:'DELIVERY', text:'Lieferschein' }),
             new sap.ui.core.Item({ key:'PO', text:'Bestellung' }),
+            new sap.ui.core.Item({ key:'STO', text:'Umlagerung' }),
             new sap.ui.core.Item({ key:'PROMO', text:'Aktion' }),
             new sap.ui.core.Item({ key:'QMNOTIF', text:'QM-Meldung' })
           ]});
@@ -1087,10 +1122,19 @@
           const heroUrl = (task && (task.image || task.banner)) || fmt.imageByMeta(task && task.priority, task && task.status, task && task.tags);
           const heroImg = new sap.m.Image({ src: heroUrl, decorative:true, width:'100%', height:'160px' }).addStyleClass('detail-hero sapUiSmallMarginBottom');
           const imgInputEdit = new sap.m.Input({ value: task && task.image || '', placeholder:'Bild-URL (optional)', liveChange:(e)=>{ const v = e.getParameter('value'); heroImg.setSrc(v||heroUrl); heroImg.setVisible(!!(v||heroUrl)); } });
+          const procKey = (task && task.processType) || '';
+          const docTypeKey = (task && task.sourceDoc && task.sourceDoc.type) || '';
+          const isWE = procKey === 'we';
+          const isExternalWE = isWE && (docTypeKey==='PO' || docTypeKey==='DELIVERY' || docTypeKey==='');
+          const isTransferWE = isWE && (docTypeKey==='STO');
+          const f1248Hint = new sap.m.MessageStrip({
+            text:'Externer Wareneingang: Bitte über die Fiori-App F1248 „Produkte empfangen“ verbuchen.',
+            type:'Information', showIcon:true, visible: isExternalWE
+          }).addStyleClass('sapUiSmallMarginBottom');
 
           const footer = new sap.m.HBox({ justifyContent:'SpaceBetween', width:'100%', items:[
             new sap.m.Button({ text:'Löschen', type:'Reject', visible: canDelete, press: async ()=>{ await deleteTask(task.id); dlg.close(); dlg.destroy(); } }),
-            new sap.m.Button({ text:'Vorgang abschließen (Mock)', type:'Emphasized', visible: model.getProperty('/canPlanTasks') || model.getProperty('/canAccessAdmin'), press: async ()=>{ await mockCompleteTask(task); dlg.close(); dlg.destroy(); } }),
+            new sap.m.Button({ text:'Vorgang abschließen (Mock)', type:'Emphasized', visible: (isTransferWE && (model.getProperty('/canPlanTasks') || model.getProperty('/canAccessAdmin'))), press: async ()=>{ await mockCompleteTask(task); dlg.close(); dlg.destroy(); } }),
             new sap.m.Button({ text:'Speichern', type:'Default', press: async ()=>{ if (!f.title.getValue()){ f.title.setValueState('Error'); return; } await updateTask(task.id, { title:f.title.getValue(), description:f.desc.getValue(), priority:f.prio.getSelectedKey(), status:f.status.getSelectedKey(), dueAt:f.due.getValue(), tags: f.tagsInput.getValue(), image: imgInputEdit.getValue() }); dlg.close(); dlg.destroy(); } })
           ]});
 
@@ -1102,7 +1146,7 @@
             new sap.m.Label({text:'Fällig bis'}), f.due,
             new sap.m.Label({text:'Tags'}), f.tagsInput,
             new sap.m.Label({text:'Prozess'}), new sap.m.Select({ selectedKey: (task && task.processType)||'', items:[ new sap.ui.core.Item({ key:'', text:'Prozess wählen' }), new sap.ui.core.Item({ key:'we', text:'Wareneingang' }), new sap.ui.core.Item({ key:'aktion', text:'Aktion' }), new sap.ui.core.Item({ key:'frische', text:'Frische' }), new sap.ui.core.Item({ key:'qm', text:'Qualitätsmeldung' }), new sap.ui.core.Item({ key:'inventur', text:'Inventur' }) ] }),
-            new sap.m.Label({text:'Belegart'}), new sap.m.Input({ value: (task && task.sourceDoc && task.sourceDoc.type) || '', placeholder:'z. B. DELIVERY, PO, PROMO' }),
+            new sap.m.Label({text:'Belegart'}), new sap.m.Input({ value: (task && task.sourceDoc && task.sourceDoc.type) || '', placeholder:'z. B. DELIVERY, PO, STO, PROMO' }),
             new sap.m.Label({text:'Belegnummer'}), new sap.m.Input({ value: (task && task.sourceDoc && task.sourceDoc.id) || '', placeholder:'z. B. 8000..., 45...' }),
             new sap.m.Label({text:'Buchung'}), new sap.m.ObjectStatus({ text: (task && task.completionAction) ? ('Buchung: ' + fmt.completionLabel(task.completionAction)) : 'Buchung: Keine', state:'None' }),
             new sap.m.Label({text:'Bild URL'}), imgInputEdit
@@ -1110,6 +1154,7 @@
 
           dlg = new sap.m.Dialog({ contentWidth:'720px', contentHeight:'auto', stretchOnPhone:true, content:[
             heroImg,
+            f1248Hint,
             form,
             new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Kommentare' }) ] }),
             commentList,
