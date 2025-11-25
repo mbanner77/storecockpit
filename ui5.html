@@ -370,6 +370,32 @@
           }catch(_){ /* ignore */ }
         }
 
+        function computeIntelliDerived(){
+          try{
+            const tasks = (model.getProperty('/tasks')||[]).slice();
+            // pick a few representative tasks
+            const rows = tasks.slice(0, 8).map((t, idx)=>{
+              const prio = t.priority || 'mittel';
+              const due = t.dueAt || '';
+              let mit = 'Mitarbeiter';
+              let role = 'Verkauf';
+              const tagStr = Array.isArray(t.tags)? t.tags.join(',').toLowerCase() : String(t.tags||'').toLowerCase();
+              if (tagStr.includes('waren')) { mit = 'Charlotte Muster'; role = 'Logistik Service'; }
+              else if (tagStr.includes('promo')||tagStr.includes('aktion')) { mit = 'Max Muster'; role = 'Logistics Service'; }
+              else if (tagStr.includes('inventur')) { mit = 'Herbert Muster'; role = 'Verkauf'; }
+              return {
+                nr: String(1200 + idx),
+                title: t.title || 'Aufgabe',
+                priority: prio,
+                dueAt: due,
+                mitarbeiter: mit,
+                rolle: role
+              };
+            });
+            model.setProperty('/intelli/rows', rows);
+          }catch(_){ /* ignore */ }
+        }
+
         const model = new sap.ui.model.json.JSONModel({
           role: initialRole,
           isAuthenticated: Boolean(initialRole),
@@ -619,6 +645,7 @@
         await loadAll();
         recomputePriorities();
         await loadAdminOverview();
+        computeIntelliDerived();
         needInitialFilterSummary = true;
         // polling for new updates/events (configurable)
         let lastUpdateCount = Array.isArray(model.getProperty('/updates')) ? model.getProperty('/updates').length : 0;
@@ -773,6 +800,7 @@
             model.setProperty('/tasksTotal', merged.length);
             model.setProperty('/tasksLabel', 'Aufgaben: ' + merged.length);
             recomputePriorities();
+            computeIntelliDerived();
           }catch(_){ /* ignore */ }
         }
 
@@ -2010,6 +2038,42 @@
         const adminTabContent = [
           adminPanel
         ];
+        function makeIntelliTab(){
+          const card = (title, items)=> new sap.m.Panel({ expandable:false, headerText:title, content:[ new sap.m.List({ items: items.map(txt=> new sap.m.StandardListItem({ title: txt })) }) ] });
+          const left = new sap.m.VBox({ width:'100%', items:[
+            card('Warenwirtschaftliche Events', ['Wareneingänge','Kundenaufträgen','Umlagerung','Preisanpassung / Etikettierung','Bestandschiefstände','Inventur','Aktionsware']),
+            card('Regelaktivitäten', ['Generierung von regelmäßigen Aufgaben anhand von Zeitplänen','Filialindividuelle Aufgaben','Wiederkehrende Aufgaben'])
+          ]});
+          const mid = new sap.m.VBox({ width:'100%', items:[
+            card('IoT zur Erkennung von Tasks', ['Integration von Pfandautomaten','Integration von Kühltruhen','Integration von Captana / Ubica','„Parfümtankstelle“'])
+          ]});
+          const right = new sap.m.VBox({ width:'100%', items:[
+            card('AI basiertes Task Mining', ['Anomalieerkennung zur Stammdaten- & WE Kontrolle','Anomalieerkennung zur Fraud Detection'])
+          ]});
+          const banner = new sap.m.MessageStrip({ text:'Eventgetriebene Filiale • Priorisierung zur Entlastung • Klare Steuerung, wann welche Aktivitäten erfolgen müssen', type:'Success', showIcon:true }).addStyleClass('sapUiSmallMarginBottom');
+          const table = new sap.m.Table({ columns:[
+            new sap.m.Column({ header:new sap.m.Label({ text:'Task-Nr.' }) }),
+            new sap.m.Column({ header:new sap.m.Label({ text:'Bezeichnung' }) }),
+            new sap.m.Column({ header:new sap.m.Label({ text:'Priorität' }) }),
+            new sap.m.Column({ header:new sap.m.Label({ text:'Fälligkeit' }) }),
+            new sap.m.Column({ header:new sap.m.Label({ text:'Mitarbeiter' }) }),
+            new sap.m.Column({ header:new sap.m.Label({ text:'Rolle' }) })
+          ]});
+          const tpl = new sap.m.ColumnListItem({ cells:[
+            new sap.m.Text({ text:'{i>nr}' }),
+            new sap.m.Text({ text:'{i>title}' }),
+            new sap.m.ObjectStatus({ text:'{i>priority}', state:{ path:'i>priority', formatter: fmt.prioState } }),
+            new sap.m.Text({ text:{ path:'i>dueAt', formatter: fmt.dueText } }),
+            new sap.m.Text({ text:'{i>mitarbeiter}' }),
+            new sap.m.Text({ text:'{i>rolle}' })
+          ]});
+          table.bindItems({ path:'i>/rows', template: tpl });
+          const iModel = new sap.ui.model.json.JSONModel({ rows: [] });
+          table.setModel(iModel, 'i');
+          // sync from global model
+          table.addEventDelegate({ onAfterRendering: ()=>{ const rows = (model.getProperty('/intelli/rows')||[]); iModel.setProperty('/rows', rows); } });
+          return new sap.m.VBox({ width:'100%', items:[ banner, new sap.m.HBox({ width:'100%', justifyContent:'SpaceAround', items:[ left, mid, right ] }).addStyleClass('sapUiSmallMarginBottom'), table ] });
+        }
         const tabs = new sap.m.IconTabBar({ expandable:false, items:[
           new sap.m.IconTabFilter({ key:'tasks', text:'Aufgaben', count: '{/tasksCount}', icon:'sap-icon://task', content:[ toolbar, chipBar, kpiBar, prioLegend, statsBar, new sap.m.ObjectStatus({ text:'Überfällige Aufgaben werden rot markiert.', state:'None' }), list ] }),
           new sap.m.IconTabFilter({ key:'updates', text:'Updates', count: '{/updatesCount}', icon:'sap-icon://message-information', content:[ makeSimpleTab({ path:'/updates', title:'Updates', desc:'content', info:'date', detailBuilder: buildUpdateDetailContent, titleProp:'title', action:'update' }) ] }),
@@ -2017,6 +2081,7 @@
           new sap.m.IconTabFilter({ key:'events', text:'Aktionstage', count: '{/eventsCount}', icon:'sap-icon://calendar', content:[ makeSimpleTab({ path:'/events', title:'Aktionstage', desc:'description', info:'date', detailBuilder: buildEventDetailContent, titleProp:'title', action:'event' }) ] }),
           new sap.m.IconTabFilter({ key:'board', text:'Board', icon:'sap-icon://kanban', content:[ makeBoard() ] }),
           new sap.m.IconTabFilter({ key:'calendar', text:'Kalender', icon:'sap-icon://appointment-2', content:[ makeCalendar() ] }),
+          new sap.m.IconTabFilter({ key:'intelli', text:'Intelligentes TM', icon:'sap-icon://initiative', content:[ makeIntelliTab() ] }),
           new sap.m.IconTabFilter({ key:'taskcenter', text:'Task Center', icon:'sap-icon://shipping-status', content:[ makeTaskCenter() ] }),
           new sap.m.IconTabFilter({ key:'admin', text:'Admin', icon:'sap-icon://action-settings', content: adminTabContent, visible:'{/canAccessAdmin}' })
         ]});
