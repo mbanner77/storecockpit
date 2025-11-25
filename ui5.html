@@ -1899,7 +1899,8 @@
           const prioSel = new sap.m.Select({ width:'11rem', selectedKey:'', items:[ new sap.ui.core.Item({ key:'', text:'Priorität: Alle' }), new sap.ui.core.Item({ key:'hoch', text:'Hoch' }), new sap.ui.core.Item({ key:'mittel', text:'Mittel' }), new sap.ui.core.Item({ key:'niedrig', text:'Niedrig' }) ] });
           const statusSel = new sap.m.Select({ width:'13rem', selectedKey:'offen', items:[ new sap.ui.core.Item({ key:'', text:'Status: Alle' }), new sap.ui.core.Item({ key:'offen', text:'Offen' }), new sap.ui.core.Item({ key:'in_arbeit', text:'In Arbeit' }), new sap.ui.core.Item({ key:'abgeschlossen', text:'Erledigt' }) ] });
           const typeSel = new sap.m.Select({ width:'15rem', selectedKey:'', items:[ new sap.ui.core.Item({ key:'', text:'Lieferart: Alle' }), new sap.ui.core.Item({ key:'STO', text:'Umlagerung (Lager/Filiale)' }), new sap.ui.core.Item({ key:'EXTERNAL', text:'Externer Partner' }), new sap.ui.core.Item({ key:'PROMO', text:'Aktion' }) ] });
-          const tcToolbar = new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Task Center – Wareneingänge' }), new sap.m.ToolbarSpacer(), prioSel, statusSel, typeSel ] }).addStyleClass('sapUiSmallMarginBottom');
+          const spInput = new sap.m.Input({ width:'16rem', placeholder:'Lieferant/Werk (z. B. L000123, Polar, 1010)', liveChange: ()=>applyBinding() });
+          const tcToolbar = new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Task Center – Wareneingänge' }), new sap.m.ToolbarSpacer(), prioSel, statusSel, typeSel, spInput ] }).addStyleClass('sapUiSmallMarginBottom');
 
           const table = new sap.m.Table({
             inset:false,
@@ -1924,6 +1925,7 @@
           function catText(t){ const s=Array.isArray(t&&t.tags)? t.tags.join(',').toLowerCase(): String((t&&t.tags)||'').toLowerCase(); if (s.includes('frische')) return 'Frische'; if (s.includes('tk')||s.includes('tiefkühl')||s.includes('kühl')) return 'Tiefkühlware'; return 'sonstige'; }
           function isPromo(t){ return (t && t.sourceDoc && t.sourceDoc.type)==='PROMO'; }
           function prioOrder(p){ return p==='hoch'?1:(p==='mittel'?2:3); }
+          function typeState(t){ const tp=(t && t.sourceDoc && t.sourceDoc.type)||''; if (tp==='STO') return 'Success'; if (tp==='PROMO') return 'Information'; if (tp==='PO'||tp==='DELIVERY') return 'Warning'; return 'None'; }
           function supplierPlantText(t){
             try{
               const tp=(t && t.sourceDoc && t.sourceDoc.type)||'';
@@ -1946,7 +1948,7 @@
             cells:[
               new sap.m.Avatar({ displayShape:'Square', imageFitType:'Cover', src:{ path:'.', formatter: fmt.imageForTask }, tooltip:'Bild' }).addStyleClass('sapUiTinyMarginEnd'),
               new sap.m.ObjectIdentifier({ title:{ parts:['sourceDoc/id'], formatter:function(id){ return id||'—'; } }, text:'{title}' }),
-              new sap.m.ObjectStatus({ text:{ parts:['sourceDoc/type'], formatter:function(t){ return t||'—'; } }, state:'None' }),
+              new sap.m.ObjectStatus({ text:{ parts:['sourceDoc/type'], formatter:function(t){ return t||'—'; } }, state:{ path:'.', formatter: typeState } }),
               new sap.m.Text({ text:{ path:'.', formatter: originText } }),
               new sap.m.Text({ text:{ path:'.', formatter: supplierPlantText } }),
               new sap.m.ObjectStatus({ text:{ path:'.', formatter: catText }, state:{ path:'priority', formatter: fmt.prioState } }),
@@ -1971,6 +1973,8 @@
             const t = typeSel.getSelectedKey(); if (t==='STO'){ filters.push(new sap.ui.model.Filter({ path:'sourceDoc/type', operator:'EQ', value1:'STO' })); }
             else if (t==='PROMO'){ filters.push(new sap.ui.model.Filter({ path:'sourceDoc/type', operator:'EQ', value1:'PROMO' })); }
             else if (t==='EXTERNAL'){ filters.push(new sap.ui.model.Filter(function(o){ const tp=(o.getProperty('sourceDoc')||{}).type||''; return tp && tp!=='STO' && tp!=='PROMO'; })); }
+            const sp = (spInput.getValue()||'').toLowerCase().trim();
+            if (sp){ filters.push(new sap.ui.model.Filter(function(o){ try{ const obj=o.getObject(); const hay=[obj.lifnr,obj.supplierName,obj.plant,obj.werks,obj.supplyingPlant].map(x=>String(x||'').toLowerCase()); return hay.some(x=> x.includes(sp)); }catch(_){ return false; } })); }
             binding.filter(filters);
             binding.sort([ new sap.ui.model.Sorter('priority', false, null, function(a,b){ return prioOrder(a)-prioOrder(b); }), new sap.ui.model.Sorter('dueAt', false) ]);
           }
