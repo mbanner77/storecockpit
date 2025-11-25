@@ -1256,6 +1256,33 @@
             type:'Information', showIcon:true, visible: isExternalWE
           }).addStyleClass('sapUiSmallMarginBottom');
 
+          function docTypeState(t){ if (t==='STO') return 'Success'; if (t==='PROMO') return 'Information'; if (t==='PO'||t==='DELIVERY') return 'Warning'; return 'None'; }
+          const dueStr = task && task.dueAt || '';
+          const overdue = fmt.overdue(dueStr);
+          const metaBar = new sap.m.Toolbar({ content:[
+            new sap.m.ObjectStatus({ text: 'Belegart: ' + (docTypeKey||'—'), state: docTypeState(docTypeKey), icon:'sap-icon://document' }),
+            new sap.m.ToolbarSeparator(),
+            new sap.m.ObjectStatus({ text: (task && task.lifnr ? ('LIFNR '+task.lifnr) : 'LIFNR –') + (task && task.supplierName ? (' • '+task.supplierName) : ''), state:'None', icon:'sap-icon://supplier' }),
+            new sap.m.ToolbarSeparator(),
+            new sap.m.ObjectStatus({ text: 'Werk: ' + (task && (task.plant||task.werks||'—')), state:'None', icon:'sap-icon://factory' }),
+            new sap.m.ToolbarSeparator(),
+            new sap.m.ObjectStatus({ text: 'Lagerort: ' + (task && (task.storageLocation||'—')), state:'None', icon:'sap-icon://inventory' }),
+            new sap.m.ToolbarSeparator(),
+            new sap.m.ObjectStatus({ text: 'Stichtag: ' + (dueStr? fmt.dueText(dueStr):'—'), state: overdue? 'Error':'None', icon:'sap-icon://appointment' })
+          ]}).addStyleClass('sapUiTinyMarginBottom');
+
+          // Quick actions: Status + Fälligkeit Presets
+          const statusQuick = new sap.m.SegmentedButton({
+            items:[ new sap.m.SegmentedButtonItem({ key:'offen', text:'Offen' }), new sap.m.SegmentedButtonItem({ key:'in_arbeit', text:'In Arbeit' }), new sap.m.SegmentedButtonItem({ key:'abgeschlossen', text:'Erledigt' }) ],
+            selectionChange: (e)=>{ f.status.setSelectedKey(e.getParameter('item').getKey()); }
+          });
+          // preselect current status
+          setTimeout(()=>{ try{ statusQuick.setSelectedKey(task && task.status || 'offen'); }catch(_){ } }, 0);
+          function setDueInHours(h){ const dt=new Date(Date.now()+h*3600000); f.due.setValue(dt.toISOString()); }
+          function setDueToday2359(){ const d=new Date(); d.setHours(23,59,0,0); f.due.setValue(d.toISOString()); }
+          function setDueTomorrowNoon(){ const d=new Date(); d.setDate(d.getDate()+1); d.setHours(12,0,0,0); f.due.setValue(d.toISOString()); }
+          const dueQuick = new sap.m.Toolbar({ content:[ new sap.m.Label({ text:'Fälligkeitsvorgaben:' }), new sap.m.Button({ text:'+2h', press: ()=> setDueInHours(2) }), new sap.m.Button({ text:'Heute 23:59', press: setDueToday2359 }), new sap.m.Button({ text:'Morgen 12:00', press: setDueTomorrowNoon }) ] }).addStyleClass('sapUiTinyMarginBottom');
+
           const footer = new sap.m.HBox({ justifyContent:'SpaceBetween', width:'100%', items:[
             new sap.m.Button({ text:'Löschen', type:'Reject', visible: canDelete, press: async ()=>{ await deleteTask(task.id); dlg.close(); dlg.destroy(); } }),
             new sap.m.Button({ text:'Vorgang abschließen', type:'Emphasized', visible: (isTransferWE && (model.getProperty('/canPlanTasks') || model.getProperty('/canAccessAdmin'))), press: async ()=>{ await mockCompleteTask(task); dlg.close(); dlg.destroy(); } }),
@@ -1278,7 +1305,10 @@
           dlg = new sap.m.Dialog({ contentWidth:'720px', contentHeight:'auto', stretchOnPhone:true, content:[
             heroImg,
             f1248Hint,
+            metaBar,
             form,
+            new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Schnellaktionen' }), new sap.m.ToolbarSpacer(), statusQuick ] }),
+            dueQuick,
             new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Kommentare' }) ] }),
             commentList,
             feed,
