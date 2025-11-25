@@ -42,7 +42,7 @@ services:
     name: taskcenter-static
     envVars:
       - key: API_BASE_URL
-        value: https://taskcenter-api.onrender.com/api
+        value: https://<api-service-name>.onrender.com/api
     buildCommand: |
       npm install
       npm run build
@@ -50,7 +50,7 @@ services:
 ```
 
 ### Konfiguration
-- Im Build-Skript muss `window.__API_BASE_URL__` gesetzt werden (z. B. über ein Inline-Script oder Replace-Schritt), damit die UI mit der API spricht.
+- Im Build-Skript muss `window.__API_BASE_URL__` gesetzt werden (z. B. über ein Inline-Script oder Replace-Schritt), damit die UI mit der API spricht. Ersetze `<api-service-name>` oben durch den tatsächlichen Render-Web-Service-Namen. Der Wert muss exakt mit der Onrender-URL übereinstimmen, damit das Zertifikat passt (z. B. `https://filial-taskcenter.onrender.com/api`).
 - Alternativ kann im Static-Service ein `redirects`-File hinterlegt werden, das `/api/*`-Requests an den Web-Service proxyt.
 
 ## Troubleshooting
@@ -58,7 +58,7 @@ services:
 | Problem | Ursache | Lösung |
 |---------|---------|--------|
 | `Server initialization failed` | Prozess beendet sich vorzeitig, z. B. weil Port 4000 fest eingestellt ist | Sicherstellen, dass `PORT` verwendet wird (`const PORT = process.env.PORT || 4000`). |
-| `Failed to load resource: /api/... 404` | API-Service läuft nicht oder UI zeigt auf falsche Basis-URL | API-Service auf Render prüfen oder `apiBaseUrl` via `window.__API_BASE_URL__` anpassen. |
+| `Failed to load resource: /api/... 404` oder `net::ERR_CERT_COMMON_NAME_INVALID` | API-Service läuft nicht oder UI zeigt auf falsche Basis-URL / Zertifikat passt nicht zum Host | API-Service auf Render prüfen und sicherstellen, dass die UI exakt auf `https://<service-name>.onrender.com/api` zeigt (oder Custom Domain + gültiges Zertifikat). |
 | `Unauthorized` | Fehlender Auth-Header | Token per UI speichern oder `DEMO_TOKEN` in Render-Umgebung setzen. |
 
 ## Deploy-Schritte
