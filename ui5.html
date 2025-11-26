@@ -1936,11 +1936,14 @@
         }
 
         function makeTaskCenter(){
+          function toCsvValue(v){ if (v==null) return ''; const s=String(v); if (/[",\n;]/.test(s)) return '"'+s.replace(/"/g,'""')+'"'; return s; }
+          function downloadCsv(filename, rows){ const blob=new Blob([rows.join('\n')],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0); }
+          function exportCsv(){ try{ const binding=table.getBinding('items'); if (!binding){ sap.m.MessageToast.show('Keine Daten'); return; } const ctxs=binding.getCurrentContexts(); if (!ctxs || !ctxs.length){ sap.m.MessageToast.show('Keine Daten'); return; } const header=['Beleg','Belegart','Herkunft','Lieferant/Werk','Warengruppe','Aktion','Stichtag','Priorität','Status','Liefertermin']; const lines=[header.join(';')]; ctxs.forEach(ctx=>{ const t=ctx.getObject(); const line=[ (t.sourceDoc&&t.sourceDoc.id)||'', (t.sourceDoc&&t.sourceDoc.type)||'', originText(t), supplierPlantText(t), catText(t), (isPromo(t)?'Ja':'Nein'), fmt.dueText(t.dueAt), t.priority||'', fmt.statusText(t.status), fmt.dueText(t.expectedAt) ].map(toCsvValue).join(';'); lines.push(line); }); downloadCsv('taskcenter_we.csv', lines); }catch(e){ console.error(e); sap.m.MessageToast.show('CSV-Export fehlgeschlagen'); } }
           const prioSel = new sap.m.Select({ width:'11rem', selectedKey:'', items:[ new sap.ui.core.Item({ key:'', text:'Priorität: Alle' }), new sap.ui.core.Item({ key:'hoch', text:'Hoch' }), new sap.ui.core.Item({ key:'mittel', text:'Mittel' }), new sap.ui.core.Item({ key:'niedrig', text:'Niedrig' }) ] });
           const statusSel = new sap.m.Select({ width:'13rem', selectedKey:'offen', items:[ new sap.ui.core.Item({ key:'', text:'Status: Alle' }), new sap.ui.core.Item({ key:'offen', text:'Offen' }), new sap.ui.core.Item({ key:'in_arbeit', text:'In Arbeit' }), new sap.ui.core.Item({ key:'abgeschlossen', text:'Erledigt' }) ] });
           const typeSel = new sap.m.Select({ width:'15rem', selectedKey:'', items:[ new sap.ui.core.Item({ key:'', text:'Lieferart: Alle' }), new sap.ui.core.Item({ key:'STO', text:'Umlagerung (Lager/Filiale)' }), new sap.ui.core.Item({ key:'EXTERNAL', text:'Externer Partner' }), new sap.ui.core.Item({ key:'PROMO', text:'Aktion' }) ] });
           const spInput = new sap.m.Input({ width:'16rem', placeholder:'Lieferant/Werk (z. B. L000123, Polar, 1010)', liveChange: ()=>applyBinding() });
-          const tcToolbar = new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Task Center – Wareneingänge' }), new sap.m.ToolbarSpacer(), prioSel, statusSel, typeSel, spInput ] }).addStyleClass('sapUiSmallMarginBottom');
+          const tcToolbar = new sap.m.Toolbar({ content:[ new sap.m.Title({ text:'Task Center – Wareneingänge' }), new sap.m.ToolbarSpacer(), prioSel, statusSel, typeSel, spInput, new sap.m.Button({ text:'Export CSV', type:'Transparent', icon:'sap-icon://download', press: exportCsv }) ] }).addStyleClass('sapUiSmallMarginBottom');
 
           const table = new sap.m.Table({
             inset:false,
@@ -2022,7 +2025,7 @@
               new sap.m.Text({ text:{ path:'.', formatter: supplierPlantText } }),
               new sap.m.ObjectStatus({ text:{ path:'.', formatter: catText }, state:{ path:'priority', formatter: fmt.prioState } }),
               new sap.m.ObjectStatus({ text:{ path:'.', formatter:function(t){ return isPromo(t)? 'Ja':'Nein'; } }, state:'None' }),
-              new sap.m.Text({ text:{ path:'dueAt', formatter: fmt.dueText } }),
+              new sap.m.ObjectStatus({ text:{ path:'dueAt', formatter: fmt.dueText }, state:{ path:'.', formatter:function(t){ return fmt.overdue(t && t.dueAt) && (t.status!=='abgeschlossen') ? 'Error' : 'None'; } } }),
               new sap.m.ObjectStatus({ text:{ path:'priority' }, state:{ path:'priority', formatter: fmt.prioState } }),
               new sap.m.ObjectStatus({ text:{ path:'status', formatter: fmt.statusText }, state:{ path:'status', formatter: fmt.statusState } }),
               new sap.m.Text({ text:{ path:'expectedAt', formatter: fmt.dueText } }),
