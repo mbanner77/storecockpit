@@ -1984,10 +1984,39 @@
             }catch(_){ return '—'; }
           }
 
+          function openDocPopover(task, source){
+            try{
+              if (!task) return;
+              const dt = (task && task.sourceDoc && task.sourceDoc.type) || '';
+              const pop = new sap.m.Popover({ placement:'Auto', showHeader:false, content:[
+                new sap.m.VBox({ width:'22rem', items:[
+                  new sap.m.ObjectHeader({
+                    title: (task.sourceDoc && task.sourceDoc.id) ? String(task.sourceDoc.id) : 'Beleg',
+                    number: (task.priority||'').toUpperCase(),
+                    numberState: fmt.prioState(task.priority||'mittel'),
+                    attributes:[
+                      new sap.m.ObjectAttribute({ title:'Belegart', text: dt }),
+                      new sap.m.ObjectAttribute({ title:'Lieferant', text: (task.lifnr? ('LIFNR '+task.lifnr):'—') + (task.supplierName? (' • '+task.supplierName):'') }),
+                      new sap.m.ObjectAttribute({ title:'Werk', text: (task.plant||task.werks||'—') }),
+                      new sap.m.ObjectAttribute({ title:'Lagerort', text: (task.storageLocation||'—') })
+                    ]
+                  }),
+                  new sap.m.Toolbar({ content:[
+                    new sap.m.ObjectStatus({ text:{ path:'/', formatter:function(){ return 'Status: ' + (task.status? fmt.statusText(task.status):'—'); } }, state: fmt.statusState(task.status||'offen') }),
+                    new sap.m.ToolbarSeparator(),
+                    new sap.m.ObjectStatus({ text:{ path:'/', formatter:function(){ return 'Fälligkeit: ' + (task.dueAt? fmt.dueText(task.dueAt):'—'); } }, state: fmt.overdue(task.dueAt)? 'Error':'None' })
+                  ]})
+                ]})
+              ]});
+              pop.addStyleClass('sapUiContentPadding');
+              pop.openBy(source);
+            }catch(_){ /* ignore */ }
+          }
+
           const template = new sap.m.ColumnListItem({
             cells:[
               new sap.m.Avatar({ displayShape:'Square', imageFitType:'Cover', src:{ path:'.', formatter: fmt.imageForTask }, tooltip:'Bild' }).addStyleClass('sapUiTinyMarginEnd'),
-              new sap.m.ObjectIdentifier({ title:{ parts:['sourceDoc/id'], formatter:function(id){ return id||'—'; } }, text:'{title}' }),
+              new sap.m.ObjectIdentifier({ title:{ parts:['sourceDoc/id'], formatter:function(id){ return id||'—'; } }, text:'{title}', titleActive:true, titlePress:function(e){ const t=e.getSource().getBindingContext().getObject(); openDocPopover(t, e.getSource()); } }),
               new sap.m.ObjectStatus({ text:{ parts:['sourceDoc/type'], formatter:function(t){ return t||'—'; } }, state:{ path:'.', formatter: typeState } }),
               new sap.m.Text({ text:{ path:'.', formatter: originText } }),
               new sap.m.Text({ text:{ path:'.', formatter: supplierPlantText } }),
